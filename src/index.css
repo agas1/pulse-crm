@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e3a8a;
+
+  --color-success-50: #f0fdf4;
+  --color-success-100: #dcfce7;
+  --color-success-200: #bbf7d0;
+  --color-success-400: #4ade80;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+
+  --color-warning-50: #fff7ed;
+  --color-warning-400: #fb923c;
+  --color-warning-500: #f97316;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+}
+
+@layer base {
+  :root {
+    --surface-page: #f1f5f9;
+    --surface-primary: #ffffff;
+    --surface-secondary: #f8fafc;
+    --surface-tertiary: #f1f5f9;
+    --surface-hover: #f8fafc;
+    --surface-active: #eff6ff;
+
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-tertiary: #64748b;
+    --text-muted: #94a3b8;
+
+    --border-primary: #e2e8f0;
+    --border-secondary: #f1f5f9;
+
+    --tint-blue: #eff6ff;
+    --tint-green: #f0fdf4;
+    --tint-purple: #f5f3ff;
+    --tint-amber: #fffbeb;
+    --tint-red: #fef2f2;
+    --tint-slate: #f1f5f9;
+
+    --chart-grid: #f1f5f9;
+    --chart-tooltip-bg: #ffffff;
+    --chart-tooltip-border: #e2e8f0;
+  }
+
+  .dark {
+    --surface-page: #0f172a;
+    --surface-primary: #1e293b;
+    --surface-secondary: #1e293b;
+    --surface-tertiary: #334155;
+    --surface-hover: #334155;
+    --surface-active: rgba(59, 130, 246, 0.15);
+
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-tertiary: #94a3b8;
+    --text-muted: #64748b;
+
+    --border-primary: #334155;
+    --border-secondary: #1e293b;
+
+    --tint-blue: rgba(59, 130, 246, 0.15);
+    --tint-green: rgba(34, 197, 94, 0.15);
+    --tint-purple: rgba(139, 92, 246, 0.15);
+    --tint-amber: rgba(245, 158, 11, 0.15);
+    --tint-red: rgba(239, 68, 68, 0.15);
+    --tint-slate: rgba(148, 163, 184, 0.1);
+
+    --chart-grid: #1e293b;
+    --chart-tooltip-bg: #334155;
+    --chart-tooltip-border: #475569;
+  }
+
+  html {
+    font-family: var(--font-sans);
+  }
+
+  body {
+    background-color: var(--surface-page);
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Partners infinite marquee */
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
