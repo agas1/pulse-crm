@@ -75,7 +75,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !!localStorage.getItem('pulse-auth-token'));
 
   /* ---------- initial fetch on mount ---------- */
 

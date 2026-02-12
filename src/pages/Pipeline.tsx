@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
-import { Building2, Calendar, User, GripVertical, Plus } from 'lucide-react';
+import { Building2, Calendar, User, GripVertical, Plus, Trash2, Pencil } from 'lucide-react';
 import Header from '../layouts/Header';
 import { useAuth } from '../contexts/AuthContext';
 import { filterByOwnership } from '../config/permissions';
 import { useData } from '../contexts/DataContext';
 import DealModal from '../components/DealModal';
-import type { DealStage } from '../data/types';
+import LoadingSpinner from '../components/LoadingSpinner';
+import type { Deal, DealStage } from '../data/types';
 
 const stages: { id: DealStage; label: string; dotColor: string; headerBg: string }[] = [
   { id: 'lead', label: 'Lead', dotColor: '#94a3b8', headerBg: 'var(--surface-secondary)' },
@@ -27,8 +28,11 @@ function getProbabilityColor(p: number): string {
 
 export default function Pipeline() {
   const [showModal, setShowModal] = useState(false);
+  const [editDeal, setEditDeal] = useState<Deal | null>(null);
   const { user } = useAuth();
-  const { deals, updateDeal } = useData();
+  const { deals, updateDeal, deleteDeal, loading } = useData();
+
+  if (loading) return <div><Header title="Pipeline de Vendas" /><LoadingSpinner /></div>;
   const userDeals = user ? filterByOwnership(deals, user) : deals;
 
   const getDealsByStage = (stage: DealStage) =>
@@ -112,7 +116,7 @@ export default function Pipeline() {
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
-                                className="bg-white dark:bg-slate-800 rounded-lg p-4 transition-shadow"
+                                className="group bg-white dark:bg-slate-800 rounded-lg p-4 transition-shadow"
                                 style={{
                                   ...provided.draggableProps.style,
                                   border: snapshot.isDragging ? '1px solid #93c5fd' : '1px solid var(--border-primary)',
@@ -165,6 +169,20 @@ export default function Pipeline() {
                                     />
                                   </div>
                                 </div>
+                                <div className="flex items-center gap-1 mt-3 pt-2 border-t border-slate-100 dark:border-slate-700 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => { setEditDeal(deal); }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-colors"
+                                  >
+                                    <Pencil className="w-3 h-3" /> Editar
+                                  </button>
+                                  <button
+                                    onClick={() => { if (confirm('Remover este deal?')) deleteDeal(deal.id); }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3" /> Remover
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </Draggable>
@@ -179,7 +197,7 @@ export default function Pipeline() {
           </div>
         </DragDropContext>
       </div>
-      <DealModal open={showModal} onClose={() => setShowModal(false)} />
+      <DealModal open={showModal || !!editDeal} onClose={() => { setShowModal(false); setEditDeal(null); }} deal={editDeal || undefined} />
     </div>
   );
 }

@@ -28,5 +28,8 @@ server/*.db-shm
 *.sln
 *.sw?
 
+# Environment variables
+.env
+
 # Windows reserved names
 nul

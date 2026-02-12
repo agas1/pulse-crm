@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import type { Contact } from '../data/types';
 import { useData } from '../contexts/DataContext';
-import { useAuth } from '../contexts/AuthContext';
 import Modal from './Modal';
 
 interface Props {
@@ -12,7 +11,6 @@ interface Props {
 
 export default function ContactModal({ open, onClose, contact }: Props) {
   const { addContact, updateContact } = useData();
-  const { user } = useAuth();
   const isEdit = !!contact;
 
   const [name, setName] = useState(contact?.name || '');
@@ -28,7 +26,7 @@ export default function ContactModal({ open, onClose, contact }: Props) {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
 
-    const payload: Record<string, unknown> = {
+    const payload = {
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim(),
@@ -38,11 +36,8 @@ export default function ContactModal({ open, onClose, contact }: Props) {
       value: Number(value) || 0,
       lastContact: new Date().toISOString().split('T')[0],
       tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+      assignedTo: isEdit && contact?.assignedTo ? contact.assignedTo : '',
     };
-    // Only send assignedTo when editing (preserve existing assignment); new contacts use backend default (auth user)
-    if (isEdit && contact?.assignedTo) {
-      payload.assignedTo = contact.assignedTo;
-    }
 
     if (isEdit && contact) {
       updateContact(contact.id, payload);

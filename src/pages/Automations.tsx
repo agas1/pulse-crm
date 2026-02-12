@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Zap, Play, Pause, ArrowRight, Clock, Hash, Plus, ChevronRight } from 'lucide-react';
 import Header from '../layouts/Header';
+import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import type { AutomationRule } from '../data/types';
@@ -59,6 +60,8 @@ export default function Automations() {
 
   const enabledCount = rules.filter((r) => r.enabled).length;
   const totalExecutions = rules.reduce((sum, r) => sum + r.executions, 0);
+
+  if (loading) return <LoadingSpinner />;
 
   return (
     <div>

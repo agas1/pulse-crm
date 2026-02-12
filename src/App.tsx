@@ -3,6 +3,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import MainLayout from './layouts/MainLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -25,6 +26,7 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <DataProvider>
+          <ErrorBoundary>
           <Routes>
             <Route path="/welcome" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
@@ -43,6 +45,7 @@ export default function App() {
               <Route path="/pricing" element={<Pricing />} />
             </Route>
           </Routes>
+          </ErrorBoundary>
           </DataProvider>
         </AuthProvider>
       </BrowserRouter>

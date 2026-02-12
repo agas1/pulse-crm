@@ -11,6 +11,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import DealModal from '../components/DealModal';
+import type { TimelineEvent } from '../data/types';
 import { whatsappConversations } from '../data/mockData';
 
 const statusConfig: Record<string, { label: string; bg: string; color: string; border: string }> = {
@@ -51,7 +52,7 @@ export default function ContactDetail() {
   const { contacts, deals, addNote, getTimelineForContact } = useData();
   const { user } = useAuth();
   const contact = contacts.find((c) => c.id === id);
-  const [timeline, setTimeline] = useState<Array<{ id: string; type: string; title: string; description: string; date: string; meta?: string }>>([]);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
 
   useEffect(() => {
     if (!contact) return;

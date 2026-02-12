@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { filterByOwnership } from '../config/permissions';
 import { useData } from '../contexts/DataContext';
 import ContactModal from '../components/ContactModal';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 const statusConfig: Record<string, { label: string; bg: string; color: string }> = {
   active: { label: 'Ativo', bg: 'var(--tint-green)', color: '#16a34a' },
@@ -19,7 +20,9 @@ export default function Contacts() {
   const [showModal, setShowModal] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { contacts } = useData();
+  const { contacts, loading } = useData();
+
+  if (loading) return <div><Header title="Contatos" /><LoadingSpinner /></div>;
   const userContacts = user ? filterByOwnership(contacts, user) : contacts;
 
   const filtered = userContacts.filter((c) => {

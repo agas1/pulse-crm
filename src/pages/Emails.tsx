@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Mail, Send, Star, ArrowLeft, Search, Paperclip, Reply } from 'lucide-react';
 import Header from '../layouts/Header';
 import { useData } from '../contexts/DataContext';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 type Tab = 'all' | 'received' | 'sent';
 
 export default function Emails() {
-  const { emails, updateEmail, addEmail } = useData();
+  const { emails, updateEmail, addEmail, loading } = useData();
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('all');
@@ -14,6 +15,8 @@ export default function Emails() {
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
+
+  if (loading) return <div className="flex flex-col h-full"><Header title="E-mails" /><LoadingSpinner /></div>;
 
   const selectedEmail = emails.find((e) => e.id === selectedEmailId) || null;
 

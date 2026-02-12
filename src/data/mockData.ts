@@ -97,14 +97,14 @@ export const contacts: Contact[] = [
 ];
 
 export const deals: Deal[] = [
-  { id: 'd1', title: 'Plataforma Enterprise TechCorp', contactId: '1', contactName: 'Ana Carolina Silva', company: 'TechCorp Solutions', value: 85000, stage: 'proposal', probability: 60, createdAt: '2025-01-10', expectedClose: '2025-02-28', assignedTo: 'u1' },
-  { id: 'd2', title: 'Integração InnovaTech', contactId: '2', contactName: 'Ricardo Mendes', company: 'InnovaTech', value: 120000, stage: 'negotiation', probability: 80, createdAt: '2025-01-05', expectedClose: '2025-02-15', assignedTo: 'u3' },
+  { id: 'd1', title: 'Plataforma Enterprise TechCorp', contactId: '1', contactName: 'Ana Carolina Silva', company: 'TechCorp Solutions', value: 85000, stage: 'proposta_enviada', probability: 60, createdAt: '2025-01-10', expectedClose: '2025-02-28', assignedTo: 'u1' },
+  { id: 'd2', title: 'Integração InnovaTech', contactId: '2', contactName: 'Ricardo Mendes', company: 'InnovaTech', value: 120000, stage: 'negociacao', probability: 80, createdAt: '2025-01-05', expectedClose: '2025-02-15', assignedTo: 'u3' },
   { id: 'd3', title: 'CRM GlobalMarket', contactId: '3', contactName: 'Juliana Costa', company: 'GlobalMarket', value: 45000, stage: 'lead', probability: 20, createdAt: '2025-01-25', expectedClose: '2025-03-30', assignedTo: 'u2' },
-  { id: 'd4', title: 'Analytics Suite DataFlow', contactId: '4', contactName: 'Fernando Oliveira', company: 'DataFlow Analytics', value: 200000, stage: 'negotiation', probability: 90, createdAt: '2024-12-20', expectedClose: '2025-02-10', assignedTo: 'u1' },
+  { id: 'd4', title: 'Analytics Suite DataFlow', contactId: '4', contactName: 'Fernando Oliveira', company: 'DataFlow Analytics', value: 200000, stage: 'negociacao', probability: 90, createdAt: '2024-12-20', expectedClose: '2025-02-10', assignedTo: 'u1' },
   { id: 'd5', title: 'Design Tools Creative Lab', contactId: '5', contactName: 'Mariana Santos', company: 'Creative Lab', value: 32000, stage: 'lead', probability: 15, createdAt: '2025-01-24', expectedClose: '2025-04-15', assignedTo: 'u2' },
-  { id: 'd6', title: 'MegaStore Full Package', contactId: '6', contactName: 'Carlos Eduardo Pinto', company: 'MegaStore Brasil', value: 150000, stage: 'closed', probability: 100, createdAt: '2024-11-15', expectedClose: '2025-01-29', assignedTo: 'u3' },
-  { id: 'd7', title: 'Automação FintechBR', contactId: '8', contactName: 'Lucas Ferreira', company: 'FintechBR', value: 65000, stage: 'qualified', probability: 35, createdAt: '2025-01-23', expectedClose: '2025-03-20', assignedTo: 'u1' },
-  { id: 'd8', title: 'Expansion Pack TechCorp', contactId: '1', contactName: 'Ana Carolina Silva', company: 'TechCorp Solutions', value: 42000, stage: 'qualified', probability: 40, createdAt: '2025-01-28', expectedClose: '2025-03-15', assignedTo: 'u1' },
+  { id: 'd6', title: 'MegaStore Full Package', contactId: '6', contactName: 'Carlos Eduardo Pinto', company: 'MegaStore Brasil', value: 150000, stage: 'fechado_ganho', probability: 100, createdAt: '2024-11-15', expectedClose: '2025-01-29', assignedTo: 'u3' },
+  { id: 'd7', title: 'Automação FintechBR', contactId: '8', contactName: 'Lucas Ferreira', company: 'FintechBR', value: 65000, stage: 'contato_feito', probability: 35, createdAt: '2025-01-23', expectedClose: '2025-03-20', assignedTo: 'u1' },
+  { id: 'd8', title: 'Expansion Pack TechCorp', contactId: '1', contactName: 'Ana Carolina Silva', company: 'TechCorp Solutions', value: 42000, stage: 'contato_feito', probability: 40, createdAt: '2025-01-28', expectedClose: '2025-03-15', assignedTo: 'u1' },
 ];
 
 export const activities: Activity[] = [

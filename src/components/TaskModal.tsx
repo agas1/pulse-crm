@@ -1,7 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import type { Task } from '../data/types';
 import { useData } from '../contexts/DataContext';
-import { useAuth } from '../contexts/AuthContext';
 import Modal from './Modal';
 
 interface Props {
@@ -21,7 +20,6 @@ const types: { id: Task['type']; label: string }[] = [
 
 export default function TaskModal({ open, onClose, task, defaultContactId }: Props) {
   const { contacts, addTask, updateTask } = useData();
-  const { user } = useAuth();
   const isEdit = !!task;
 
   const [title, setTitle] = useState(task?.title || '');
@@ -31,6 +29,16 @@ export default function TaskModal({ open, onClose, task, defaultContactId }: Pro
   const [priority, setPriority] = useState<Task['priority']>(task?.priority || 'medium');
   const [dueDate, setDueDate] = useState(task?.dueDate || '');
   const [dueTime, setDueTime] = useState(task?.dueTime || '');
+
+  useEffect(() => {
+    setTitle(task?.title || '');
+    setDescription(task?.description || '');
+    setContactId(task?.contactId || defaultContactId || '');
+    setType(task?.type || 'follow_up');
+    setPriority(task?.priority || 'medium');
+    setDueDate(task?.dueDate || '');
+    setDueTime(task?.dueTime || '');
+  }, [task, defaultContactId]);
 
   const selectedContact = contacts.find((c) => c.id === contactId);
 

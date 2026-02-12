@@ -45,29 +45,34 @@ router.post('/login', (req, res) => {
     return;
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim()) as UserRow | undefined;
+  try {
+    const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim()) as UserRow | undefined;
 
-  if (!user) {
-    res.status(401).json({ error: 'E-mail ou senha incorretos' });
-    return;
+    if (!user) {
+      res.status(401).json({ error: 'E-mail ou senha incorretos' });
+      return;
+    }
+
+    if (!bcrypt.compareSync(password, user.password)) {
+      res.status(401).json({ error: 'E-mail ou senha incorretos' });
+      return;
+    }
+
+    if (user.status === 'inactive') {
+      res.status(403).json({ error: 'Conta inativa. Contate o administrador.' });
+      return;
+    }
+
+    const token = signToken({ userId: user.id, role: user.role });
+
+    res.json({
+      token,
+      user: sanitizeUser(user),
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro desconhecido';
+    res.status(500).json({ error: message });
   }
-
-  if (!bcrypt.compareSync(password, user.password)) {
-    res.status(401).json({ error: 'E-mail ou senha incorretos' });
-    return;
-  }
-
-  if (user.status === 'inactive') {
-    res.status(403).json({ error: 'Conta inativa. Contate o administrador.' });
-    return;
-  }
-
-  const token = signToken({ userId: user.id, role: user.role });
-
-  res.json({
-    token,
-    user: sanitizeUser(user),
-  });
 });
 
 // GET /api/auth/me
@@ -134,21 +139,26 @@ router.post('/register', (req, res) => {
     return;
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
-  if (existing) {
-    res.status(409).json({ error: 'Já existe uma conta com este e-mail' });
-    return;
+  try {
+    const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
+    if (existing) {
+      res.status(409).json({ error: 'Já existe uma conta com este e-mail' });
+      return;
+    }
+
+    const id = crypto.randomUUID();
+    const hashed = bcrypt.hashSync(password, 10);
+
+    db.prepare(`
+      INSERT INTO users (id, name, email, password, role, plan, status)
+      VALUES (?, ?, ?, ?, 'seller', 'trial', 'active')
+    `).run(id, name.trim(), email.trim().toLowerCase(), hashed);
+
+    res.status(201).json({ message: 'Conta criada com sucesso! Faça login para continuar.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro desconhecido';
+    res.status(500).json({ error: message });
   }
-
-  const id = crypto.randomUUID();
-  const hashed = bcrypt.hashSync(password, 10);
-
-  db.prepare(`
-    INSERT INTO users (id, name, email, password, role, plan, status)
-    VALUES (?, ?, ?, ?, 'seller', 'trial', 'active')
-  `).run(id, name.trim(), email.trim().toLowerCase(), hashed);
-
-  res.status(201).json({ message: 'Conta criada com sucesso! Faça login para continuar.' });
 });
 
 // POST /api/auth/forgot-password
@@ -184,11 +194,13 @@ router.post('/forgot-password', (req, res) => {
   // In production, send email here. In dev, we log and return the code.
   console.log(`🔑 Password reset code for ${user.email}: ${code}`);
 
-  res.json({
+  const response: Record<string, string> = {
     message: 'Se o e-mail existir, um código de recuperação será enviado.',
-    // DEV ONLY - remove in production
-    _devCode: code,
-  });
+  };
+  if (process.env.NODE_ENV !== 'production') {
+    response._devCode = code;
+  }
+  res.json(response);
 });
 
 // POST /api/auth/reset-password

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Upload, FileText, CheckCircle2, AlertCircle, ArrowRight, ArrowLeft, X } from 'lucide-react';
+import { Upload, FileText, CheckCircle2, AlertCircle, ArrowRight, ArrowLeft } from 'lucide-react';
 import Modal from './Modal';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -178,7 +178,7 @@ export default function CsvImportModal({ open, onClose }: Props) {
     }).filter((entry) => entry.name?.trim());
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     const mapped = getMappedData();
     const contactsToImport = mapped.map((row) => ({
       name: row.name || '',
@@ -193,7 +193,7 @@ export default function CsvImportModal({ open, onClose }: Props) {
       assignedTo: user?.id || 'u1',
     }));
 
-    const count = importContacts(contactsToImport);
+    const count = await importContacts(contactsToImport);
     setImportedCount(count);
     setStep('done');
   };

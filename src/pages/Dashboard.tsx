@@ -12,6 +12,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { filterByOwnership } from '../config/permissions';
 import { useData } from '../contexts/DataContext';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 const activityIcons: Record<string, typeof Mail> = { email: Mail, call: Phone, meeting: Calendar, note: FileText, whatsapp: MessageCircle, status_change: Zap, task_done: CheckCircle2 };
 
@@ -20,7 +21,9 @@ const formatCurrency = (value: number) => `R$ ${(value / 1000).toFixed(0)}k`;
 export default function Dashboard() {
   const { isDark } = useTheme();
   const { user } = useAuth();
-  const { contacts, deals, activities } = useData();
+  const { contacts, deals, activities, loading } = useData();
+
+  if (loading) return <div><Header title="Dashboard" /><LoadingSpinner /></div>;
 
   const userDeals = user ? filterByOwnership(deals, user) : deals;
   const userContacts = user ? filterByOwnership(contacts, user) : contacts;

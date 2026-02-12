@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Calendar, Clock, AlertCircle, CheckCircle2, Circle, User, Zap, Plus, Filter } from 'lucide-react';
+import { Calendar, Clock, AlertCircle, CheckCircle2, Circle, User, Zap, Plus, Filter, Trash2, Pencil } from 'lucide-react';
 import Header from '../layouts/Header';
 import { useAuth } from '../contexts/AuthContext';
 import { filterByOwnership } from '../config/permissions';
 import { useData } from '../contexts/DataContext';
 import TaskModal from '../components/TaskModal';
+import LoadingSpinner from '../components/LoadingSpinner';
+import type { Task } from '../data/types';
 
 const priorityConfig: Record<string, { label: string; bg: string; color: string; border: string }> = {
   high: { label: 'Alta', bg: 'var(--tint-red)', color: '#dc2626', border: '#fecaca' },
@@ -57,8 +59,11 @@ export default function Tasks() {
   const [search, setSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
+  const [editTask, setEditTask] = useState<Task | null>(null);
   const { user } = useAuth();
-  const { tasks, updateTask } = useData();
+  const { tasks, updateTask, deleteTask, loading } = useData();
+
+  if (loading) return <div><Header title="Tarefas" /><LoadingSpinner /></div>;
   const userTasks = user ? filterByOwnership(tasks, user) : tasks;
 
   const tabCounts: Record<TabKey, number> = {
@@ -280,13 +285,29 @@ export default function Tasks() {
                       <span>{assignee}</span>
                     </div>
                   </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditTask(task); }}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-colors"
+                      title="Editar"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (confirm('Remover esta tarefa?')) deleteTask(task.id); }}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors"
+                      title="Remover"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       </div>
-      <TaskModal open={showModal} onClose={() => setShowModal(false)} />
+      <TaskModal open={showModal || !!editTask} onClose={() => { setShowModal(false); setEditTask(null); }} task={editTask || undefined} />
     </div>
   );
 }

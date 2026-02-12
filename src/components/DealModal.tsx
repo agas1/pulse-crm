@@ -1,7 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import type { Deal, DealStage } from '../data/types';
 import { useData } from '../contexts/DataContext';
-import { useAuth } from '../contexts/AuthContext';
 import Modal from './Modal';
 
 interface Props {
@@ -22,7 +21,6 @@ const stages: { id: DealStage; label: string }[] = [
 
 export default function DealModal({ open, onClose, deal, defaultContactId }: Props) {
   const { contacts, addDeal, updateDeal } = useData();
-  const { user } = useAuth();
   const isEdit = !!deal;
 
   const [title, setTitle] = useState(deal?.title || '');
@@ -31,6 +29,15 @@ export default function DealModal({ open, onClose, deal, defaultContactId }: Pro
   const [stage, setStage] = useState<DealStage>(deal?.stage || 'lead');
   const [probability, setProbability] = useState(String(deal?.probability ?? 20));
   const [expectedClose, setExpectedClose] = useState(deal?.expectedClose || '');
+
+  useEffect(() => {
+    setTitle(deal?.title || '');
+    setContactId(deal?.contactId || defaultContactId || '');
+    setValue(String(deal?.value || ''));
+    setStage(deal?.stage || 'lead');
+    setProbability(String(deal?.probability ?? 20));
+    setExpectedClose(deal?.expectedClose || '');
+  }, [deal, defaultContactId]);
 
   const selectedContact = contacts.find((c) => c.id === contactId);
 
