@@ -19,6 +19,9 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Pricing from './pages/Pricing';
 import LandingPage from './pages/LandingPage';
+import Leads from './pages/Leads';
+import Organizations from './pages/Organizations';
+import Cadences from './pages/Cadences';
 
 export default function App() {
   return (
@@ -32,14 +35,17 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/leads" element={<Leads />} />
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/contacts/:id" element={<ContactDetail />} />
+              <Route path="/organizations" element={<Organizations />} />
               <Route path="/pipeline" element={<Pipeline />} />
               <Route path="/activities" element={<Activities />} />
               <Route path="/emails" element={<Emails />} />
               <Route path="/channels" element={<Channels />} />
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/automations" element={<Automations />} />
+              <Route path="/cadences" element={<Cadences />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/pricing" element={<Pricing />} />

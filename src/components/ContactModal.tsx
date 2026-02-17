@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function ContactModal({ open, onClose, contact }: Props) {
-  const { addContact, updateContact } = useData();
+  const { addContact, updateContact, organizations } = useData();
   const isEdit = !!contact;
 
   const [name, setName] = useState(contact?.name || '');
@@ -21,12 +21,13 @@ export default function ContactModal({ open, onClose, contact }: Props) {
   const [status, setStatus] = useState<Contact['status']>(contact?.status || 'lead');
   const [value, setValue] = useState(String(contact?.value || ''));
   const [tags, setTags] = useState(contact?.tags.join(', ') || '');
+  const [organizationId, setOrganizationId] = useState(contact?.organizationId || '');
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim(),
@@ -39,10 +40,14 @@ export default function ContactModal({ open, onClose, contact }: Props) {
       assignedTo: isEdit && contact?.assignedTo ? contact.assignedTo : '',
     };
 
+    if (organizationId) {
+      payload.organizationId = organizationId;
+    }
+
     if (isEdit && contact) {
       updateContact(contact.id, payload);
     } else {
-      addContact(payload);
+      addContact(payload as any);
     }
     onClose();
   };
@@ -72,6 +77,15 @@ export default function ContactModal({ open, onClose, contact }: Props) {
             <label className={labelClass}>Empresa</label>
             <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Nome da empresa" className={inputClass} />
           </div>
+        </div>
+        <div>
+          <label className={labelClass}>Organização</label>
+          <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)} className={inputClass}>
+            <option value="">Nenhuma</option>
+            {organizations.map((org) => (
+              <option key={org.id} value={org.id}>{org.name}</option>
+            ))}
+          </select>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>

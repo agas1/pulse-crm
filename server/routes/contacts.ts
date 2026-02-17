@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import db from '../db.js';
 import { verifyAuth, requireRole } from '../middleware/auth.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { evaluateAutomations } from '../automation-engine.js';
 
 const router = Router();
 
@@ -256,6 +257,13 @@ router.post('/', (req: AuthRequest, res) => {
 
     const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(id) as ContactRow;
     const notes = db.prepare('SELECT * FROM notes WHERE contact_id = ? ORDER BY date DESC').all(id) as NoteRow[];
+
+    // Disparar automações para contato criado
+    try {
+      evaluateAutomations({ type: 'contact_created', data: contact as unknown as Record<string, unknown>, userId: auth.userId });
+    } catch (autoErr) {
+      console.error('[Automação] Erro ao processar evento contact_created:', autoErr);
+    }
 
     res.status(201).json({ contact: sanitizeContact(contact, notes) });
   } catch (err: unknown) {

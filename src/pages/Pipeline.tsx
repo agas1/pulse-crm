@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
-import { Building2, Calendar, User, GripVertical, Plus, Trash2, Pencil } from 'lucide-react';
+import { Building2, Calendar, User, GripVertical, Plus, Trash2, Pencil, CalendarPlus } from 'lucide-react';
 import Header from '../layouts/Header';
 import { useAuth } from '../contexts/AuthContext';
 import { filterByOwnership } from '../config/permissions';
 import { useData } from '../contexts/DataContext';
 import DealModal from '../components/DealModal';
+import ScheduleActivityModal from '../components/ScheduleActivityModal';
 import LoadingSpinner from '../components/LoadingSpinner';
-import type { Deal, DealStage } from '../data/types';
+import type { Deal, DealStage, ScheduledActivity } from '../data/types';
 
 const stages: { id: DealStage; label: string; dotColor: string; headerBg: string }[] = [
   { id: 'lead', label: 'Lead', dotColor: '#94a3b8', headerBg: 'var(--surface-secondary)' },
@@ -26,11 +27,40 @@ function getProbabilityColor(p: number): string {
   return '#cbd5e1';
 }
 
+type ActivityStatus = 'stalled' | 'overdue' | 'today' | 'scheduled';
+
+function getActivityStatus(deal: Deal, scheduledActivities: ScheduledActivity[]): ActivityStatus {
+  const today = new Date().toISOString().split('T')[0];
+  const dealActivities = scheduledActivities.filter(sa => sa.dealId === deal.id && !sa.completed);
+  if (dealActivities.length === 0) return 'stalled';
+  const nextDate = dealActivities.reduce((min, sa) => sa.dueDate < min ? sa.dueDate : min, dealActivities[0].dueDate);
+  if (nextDate < today) return 'overdue';
+  if (nextDate === today) return 'today';
+  return 'scheduled';
+}
+
+function getActivityTooltip(deal: Deal, scheduledActivities: ScheduledActivity[]): string {
+  const dealActivities = scheduledActivities.filter(sa => sa.dealId === deal.id && !sa.completed);
+  if (dealActivities.length === 0) return 'Sem atividade agendada - Deal parado';
+  const sorted = [...dealActivities].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const next = sorted[0];
+  const timeStr = next.dueTime ? ` as ${next.dueTime}` : '';
+  return `Proxima: ${next.title} em ${next.dueDate}${timeStr} (${dealActivities.length} pendente${dealActivities.length > 1 ? 's' : ''})`;
+}
+
+const activityDotStyles: Record<ActivityStatus, { bg: string; shadow: string; animate: boolean }> = {
+  stalled: { bg: '#94a3b8', shadow: '0 0 0 2px rgba(148,163,184,0.3)', animate: true },
+  overdue: { bg: '#ef4444', shadow: '0 0 0 2px rgba(239,68,68,0.3)', animate: false },
+  today: { bg: '#f59e0b', shadow: '0 0 0 2px rgba(245,158,11,0.3)', animate: false },
+  scheduled: { bg: '#22c55e', shadow: '0 0 0 2px rgba(34,197,94,0.3)', animate: false },
+};
+
 export default function Pipeline() {
   const [showModal, setShowModal] = useState(false);
   const [editDeal, setEditDeal] = useState<Deal | null>(null);
+  const [scheduleForDeal, setScheduleForDeal] = useState<string | null>(null);
   const { user } = useAuth();
-  const { deals, updateDeal, deleteDeal, loading } = useData();
+  const { deals, updateDeal, deleteDeal, scheduledActivities, loading } = useData();
 
   if (loading) return <div><Header title="Pipeline de Vendas" /><LoadingSpinner /></div>;
   const userDeals = user ? filterByOwnership(deals, user) : deals;
@@ -110,7 +140,11 @@ export default function Pipeline() {
                           backgroundColor: snapshot.isDraggingOver ? 'var(--surface-active)' : 'var(--surface-secondary)',
                         }}
                       >
-                        {stageDeals.map((deal, index) => (
+                        {stageDeals.map((deal, index) => {
+                          const actStatus = getActivityStatus(deal, scheduledActivities);
+                          const actTooltip = getActivityTooltip(deal, scheduledActivities);
+                          const dotStyle = activityDotStyles[actStatus];
+                          return (
                           <Draggable key={deal.id} draggableId={deal.id} index={index}>
                             {(provided, snapshot) => (
                               <div
@@ -124,9 +158,19 @@ export default function Pipeline() {
                                 }}
                               >
                                 <div className="flex items-start justify-between mb-3">
-                                  <h4 className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-snug pr-2">
-                                    {deal.title}
-                                  </h4>
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`inline-block w-2 h-2 rounded-full shrink-0${dotStyle.animate ? ' animate-pulse' : ''}`}
+                                      title={actTooltip}
+                                      style={{
+                                        backgroundColor: dotStyle.bg,
+                                        boxShadow: dotStyle.shadow,
+                                      }}
+                                    />
+                                    <h4 className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-snug pr-2">
+                                      {deal.title}
+                                    </h4>
+                                  </div>
                                   <div {...provided.dragHandleProps} className="text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 cursor-grab active:cursor-grabbing">
                                     <GripVertical className="w-4 h-4" />
                                   </div>
@@ -177,6 +221,12 @@ export default function Pipeline() {
                                     <Pencil className="w-3 h-3" /> Editar
                                   </button>
                                   <button
+                                    onClick={() => setScheduleForDeal(deal.id)}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors"
+                                  >
+                                    <CalendarPlus className="w-3 h-3" /> Atividade
+                                  </button>
+                                  <button
                                     onClick={() => { if (confirm('Remover este deal?')) deleteDeal(deal.id); }}
                                     className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors"
                                   >
@@ -186,7 +236,8 @@ export default function Pipeline() {
                               </div>
                             )}
                           </Draggable>
-                        ))}
+                          );
+                        })}
                         {provided.placeholder}
                       </div>
                     )}
@@ -198,6 +249,11 @@ export default function Pipeline() {
         </DragDropContext>
       </div>
       <DealModal open={showModal || !!editDeal} onClose={() => { setShowModal(false); setEditDeal(null); }} deal={editDeal || undefined} />
+      <ScheduleActivityModal
+        open={!!scheduleForDeal}
+        onClose={() => setScheduleForDeal(null)}
+        dealId={scheduleForDeal || undefined}
+      />
     </div>
   );
 }

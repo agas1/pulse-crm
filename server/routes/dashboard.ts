@@ -223,4 +223,48 @@ router.get('/reports', (req: AuthRequest, res) => {
   }
 });
 
+// ──────────────────────────────────────
+// GET /activity-summary — Activity summary counts
+// ──────────────────────────────────────
+
+router.get('/activity-summary', (req: AuthRequest, res) => {
+  try {
+    const { where, params } = ownershipFilter(req.auth);
+
+    // Build ownership filter for scheduled_activities
+    const schedWhere = req.auth!.role === 'seller' ? 'AND assigned_to = ?' : '';
+    const schedParams = req.auth!.role === 'seller' ? [req.auth!.userId] : [];
+
+    // Overdue: completed=0 AND due_date < date('now')
+    const overdueRow = db.prepare(
+      `SELECT COUNT(*) as total FROM scheduled_activities WHERE completed = 0 AND due_date < date('now') ${schedWhere}`
+    ).get(...schedParams) as { total: number };
+
+    // Today: completed=0 AND due_date = date('now')
+    const todayRow = db.prepare(
+      `SELECT COUNT(*) as total FROM scheduled_activities WHERE completed = 0 AND due_date = date('now') ${schedWhere}`
+    ).get(...schedParams) as { total: number };
+
+    // Upcoming: completed=0 AND due_date > date('now')
+    const upcomingRow = db.prepare(
+      `SELECT COUNT(*) as total FROM scheduled_activities WHERE completed = 0 AND due_date > date('now') ${schedWhere}`
+    ).get(...schedParams) as { total: number };
+
+    // Stalled deals: next_activity_date IS NULL OR next_activity_date < date('now')
+    const stalledRow = db.prepare(
+      `SELECT COUNT(*) as total FROM deals WHERE (next_activity_date IS NULL OR next_activity_date < date('now')) ${where}`
+    ).get(...params) as { total: number };
+
+    res.json({
+      overdue: overdueRow.total,
+      today: todayRow.total,
+      upcoming: upcomingRow.total,
+      stalled: stalledRow.total,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro desconhecido';
+    res.status(500).json({ error: `Erro ao buscar resumo de atividades: ${message}` });
+  }
+});
+
 export default router;

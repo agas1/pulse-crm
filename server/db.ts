@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, 'pulse-crm.db');
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'pulse-crm.db');
 
 const db = new Database(DB_PATH);
 
@@ -46,6 +46,22 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    industry TEXT DEFAULT '',
+    website TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    address TEXT DEFAULT '',
+    employee_count INTEGER DEFAULT 0,
+    annual_revenue REAL DEFAULT 0,
+    notes TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -59,6 +75,7 @@ db.exec(`
     last_contact TEXT DEFAULT (date('now')),
     tags TEXT DEFAULT '[]',
     assigned_to TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    organization_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -87,6 +104,28 @@ db.exec(`
     probability INTEGER DEFAULT 20,
     expected_close TEXT,
     assigned_to TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    organization_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
+    next_activity_date TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS leads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    company TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    score TEXT CHECK(score IN ('hot','warm','cold')) DEFAULT 'warm',
+    notes TEXT DEFAULT '',
+    status TEXT CHECK(status IN ('new','contacted','qualified','disqualified')) DEFAULT 'new',
+    assigned_to TEXT REFERENCES users(id) ON DELETE CASCADE,
+    organization_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
+    job_title TEXT DEFAULT '',
+    company_size TEXT CHECK(company_size IN ('','1-10','11-50','51-200','201-1000','1000+')) DEFAULT '',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -95,7 +134,7 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS activities (
     id TEXT PRIMARY KEY,
-    type TEXT CHECK(type IN ('email','call','meeting','note','whatsapp','status_change','task_done')) NOT NULL,
+    type TEXT CHECK(type IN ('email','call','meeting','note','whatsapp','status_change','task_done','lead_converted')) NOT NULL,
     description TEXT NOT NULL,
     contact_name TEXT DEFAULT '',
     contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
@@ -143,6 +182,23 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS scheduled_activities (
+    id TEXT PRIMARY KEY,
+    type TEXT CHECK(type IN ('call','meeting','email','follow_up','task','demo')) NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    deal_id TEXT REFERENCES deals(id) ON DELETE CASCADE,
+    contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+    assigned_to TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    due_date TEXT NOT NULL,
+    due_time TEXT,
+    completed INTEGER DEFAULT 0,
+    completed_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS automation_rules (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -150,10 +206,200 @@ db.exec(`
     trigger_event TEXT NOT NULL,
     condition TEXT NOT NULL,
     action TEXT NOT NULL,
+    trigger_type TEXT DEFAULT '',
+    trigger_config TEXT DEFAULT '{}',
+    condition_type TEXT DEFAULT 'always',
+    condition_config TEXT DEFAULT '{}',
+    action_type TEXT DEFAULT '',
+    action_config TEXT DEFAULT '{}',
     enabled INTEGER DEFAULT 1,
     executions INTEGER DEFAULT 0,
     last_triggered TEXT,
     created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS automation_logs (
+    id TEXT PRIMARY KEY,
+    rule_id TEXT REFERENCES automation_rules(id) ON DELETE CASCADE,
+    rule_name TEXT NOT NULL,
+    trigger_type TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    result TEXT DEFAULT 'success',
+    details TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+// ──────────────────────────────────────
+// CADENCE ENGINE TABLES
+// ──────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cadences (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    status TEXT CHECK(status IN ('draft','active','paused','archived')) NOT NULL DEFAULT 'draft',
+    created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    total_enrolled INTEGER DEFAULT 0,
+    total_completed INTEGER DEFAULT 0,
+    total_replied INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cadence_steps (
+    id TEXT PRIMARY KEY,
+    cadence_id TEXT NOT NULL REFERENCES cadences(id) ON DELETE CASCADE,
+    step_order INTEGER NOT NULL,
+    delay_days INTEGER NOT NULL DEFAULT 0,
+    delay_hours INTEGER NOT NULL DEFAULT 0,
+    channel TEXT CHECK(channel IN ('email','whatsapp','call','task','linkedin_manual')) NOT NULL,
+    template_subject TEXT DEFAULT '',
+    template_body TEXT DEFAULT '',
+    condition_skip TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cadence_enrollments (
+    id TEXT PRIMARY KEY,
+    cadence_id TEXT NOT NULL REFERENCES cadences(id) ON DELETE CASCADE,
+    lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
+    contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+    enrolled_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    current_step INTEGER DEFAULT 1,
+    status TEXT CHECK(status IN ('active','paused','completed','replied','bounced','unsubscribed')) NOT NULL DEFAULT 'active',
+    started_at TEXT DEFAULT (datetime('now')),
+    paused_at TEXT,
+    completed_at TEXT,
+    last_step_at TEXT,
+    next_step_due TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cadence_step_executions (
+    id TEXT PRIMARY KEY,
+    enrollment_id TEXT NOT NULL REFERENCES cadence_enrollments(id) ON DELETE CASCADE,
+    step_id TEXT NOT NULL REFERENCES cadence_steps(id) ON DELETE CASCADE,
+    step_order INTEGER NOT NULL,
+    channel TEXT NOT NULL,
+    status TEXT CHECK(status IN ('pending','sent','delivered','opened','replied','bounced','failed')) NOT NULL DEFAULT 'pending',
+    sent_at TEXT,
+    opened_at TEXT,
+    replied_at TEXT,
+    error TEXT DEFAULT '',
+    external_id TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS channel_configs (
+    id TEXT PRIMARY KEY,
+    channel TEXT CHECK(channel IN ('smtp','whatsapp','instagram')) NOT NULL UNIQUE,
+    config TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER DEFAULT 0,
+    simulation_mode INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+// ──────────────────────────────────────
+// SDR INTELLIGENCE TABLES
+// ──────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lead_scores (
+    id TEXT PRIMARY KEY,
+    lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    numeric_score INTEGER NOT NULL DEFAULT 0 CHECK(numeric_score >= 0 AND numeric_score <= 100),
+    score_breakdown TEXT NOT NULL DEFAULT '{}',
+    derived_label TEXT CHECK(derived_label IN ('hot','warm','cold')) DEFAULT 'cold',
+    last_interaction_at TEXT,
+    last_calculated_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lead_score_events (
+    id TEXT PRIMARY KEY,
+    lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    points_delta INTEGER NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reply_classifications (
+    id TEXT PRIMARY KEY,
+    enrollment_id TEXT NOT NULL REFERENCES cadence_enrollments(id) ON DELETE CASCADE,
+    step_execution_id TEXT REFERENCES cadence_step_executions(id) ON DELETE SET NULL,
+    lead_id TEXT REFERENCES leads(id) ON DELETE SET NULL,
+    contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+    reply_text TEXT NOT NULL,
+    classification TEXT CHECK(classification IN ('interested','not_interested','meeting_request','proposal_request','out_of_office','unsubscribe','other')) NOT NULL,
+    confidence REAL DEFAULT 0.0,
+    ai_reasoning TEXT DEFAULT '',
+    actions_taken TEXT DEFAULT '[]',
+    reviewed INTEGER DEFAULT 0,
+    classified_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS unsubscribe_list (
+    id TEXT PRIMARY KEY,
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    reason TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    enrollment_id TEXT REFERENCES cadence_enrollments(id) ON DELETE SET NULL,
+    unsubscribed_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS send_log (
+    id TEXT PRIMARY KEY,
+    email_domain TEXT NOT NULL,
+    sent_at TEXT DEFAULT (datetime('now')),
+    execution_id TEXT REFERENCES cadence_step_executions(id) ON DELETE SET NULL
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS bounce_log (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    bounce_type TEXT CHECK(bounce_type IN ('hard','soft')) NOT NULL,
+    reason TEXT DEFAULT '',
+    execution_id TEXT REFERENCES cadence_step_executions(id) ON DELETE SET NULL,
+    bounced_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS compliance_config (
+    id TEXT PRIMARY KEY DEFAULT 'config',
+    max_emails_per_hour_per_domain INTEGER DEFAULT 30,
+    max_emails_per_day INTEGER DEFAULT 200,
+    soft_bounce_retry_count INTEGER DEFAULT 1,
+    enabled INTEGER DEFAULT 1,
     updated_at TEXT DEFAULT (datetime('now'))
   );
 `);
@@ -163,11 +409,16 @@ db.exec(`
 // ──────────────────────────────────────
 
 db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_organizations_name ON organizations(name);
   CREATE INDEX IF NOT EXISTS idx_contacts_assigned ON contacts(assigned_to);
   CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status);
+  CREATE INDEX IF NOT EXISTS idx_contacts_org ON contacts(organization_id);
   CREATE INDEX IF NOT EXISTS idx_deals_contact ON deals(contact_id);
   CREATE INDEX IF NOT EXISTS idx_deals_assigned ON deals(assigned_to);
   CREATE INDEX IF NOT EXISTS idx_deals_stage ON deals(stage);
+  CREATE INDEX IF NOT EXISTS idx_deals_org ON deals(organization_id);
+  CREATE INDEX IF NOT EXISTS idx_leads_assigned ON leads(assigned_to);
+  CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
   CREATE INDEX IF NOT EXISTS idx_activities_contact ON activities(contact_id);
   CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(date);
   CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to);
@@ -175,6 +426,31 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
   CREATE INDEX IF NOT EXISTS idx_emails_contact ON emails(contact_id);
   CREATE INDEX IF NOT EXISTS idx_notes_contact ON notes(contact_id);
+  CREATE INDEX IF NOT EXISTS idx_sched_deal ON scheduled_activities(deal_id);
+  CREATE INDEX IF NOT EXISTS idx_sched_assigned ON scheduled_activities(assigned_to);
+  CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_activities(due_date);
+  CREATE INDEX IF NOT EXISTS idx_sched_completed ON scheduled_activities(completed);
+  CREATE INDEX IF NOT EXISTS idx_autolog_rule ON automation_logs(rule_id);
+  CREATE INDEX IF NOT EXISTS idx_autolog_date ON automation_logs(created_at);
+  CREATE INDEX IF NOT EXISTS idx_cadence_steps_cadence ON cadence_steps(cadence_id);
+  CREATE INDEX IF NOT EXISTS idx_cadence_steps_order ON cadence_steps(cadence_id, step_order);
+  CREATE INDEX IF NOT EXISTS idx_enrollments_cadence ON cadence_enrollments(cadence_id);
+  CREATE INDEX IF NOT EXISTS idx_enrollments_lead ON cadence_enrollments(lead_id);
+  CREATE INDEX IF NOT EXISTS idx_enrollments_contact ON cadence_enrollments(contact_id);
+  CREATE INDEX IF NOT EXISTS idx_enrollments_status ON cadence_enrollments(status);
+  CREATE INDEX IF NOT EXISTS idx_enrollments_next_due ON cadence_enrollments(status, next_step_due);
+  CREATE INDEX IF NOT EXISTS idx_step_exec_enrollment ON cadence_step_executions(enrollment_id);
+  CREATE INDEX IF NOT EXISTS idx_step_exec_status ON cadence_step_executions(status);
+  CREATE INDEX IF NOT EXISTS idx_channel_configs_channel ON channel_configs(channel);
+
+  CREATE INDEX IF NOT EXISTS idx_lead_scores_lead ON lead_scores(lead_id);
+  CREATE INDEX IF NOT EXISTS idx_lead_scores_numeric ON lead_scores(numeric_score DESC);
+  CREATE INDEX IF NOT EXISTS idx_lead_score_events_lead ON lead_score_events(lead_id);
+  CREATE INDEX IF NOT EXISTS idx_reply_class_enrollment ON reply_classifications(enrollment_id);
+  CREATE INDEX IF NOT EXISTS idx_reply_class_lead ON reply_classifications(lead_id);
+  CREATE INDEX IF NOT EXISTS idx_reply_class_classification ON reply_classifications(classification);
+  CREATE INDEX IF NOT EXISTS idx_send_log_domain_time ON send_log(email_domain, sent_at);
+  CREATE INDEX IF NOT EXISTS idx_bounce_email ON bounce_log(email);
 `);
 
 // ──────────────────────────────────────
@@ -200,21 +476,35 @@ if (userCount.count === 0) {
     insertUser.run('u4', 'Camila Duarte', 'camila@pulsecrm.com', hash('123456'), '', 'manager', 'professional', 'active', 6, 180000, 25);
     insertUser.run('u5', 'Thiago Lima', 'thiago@pulsecrm.com', hash('123456'), '', 'seller', 'professional', 'inactive', 3, 95000, 15);
 
+    // ── Organizations ──
+    const insertOrg = db.prepare(`
+      INSERT INTO organizations (id, name, industry, website, phone, employee_count, annual_revenue)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertOrg.run('org1', 'TechCorp Solutions', 'Tecnologia', 'https://techcorp.com', '(11)3000-0001', 250, 15000000);
+    insertOrg.run('org2', 'InnovaTech', 'SaaS', 'https://innovatech.io', '(11)3000-0002', 80, 5000000);
+    insertOrg.run('org3', 'GlobalMarket', 'E-commerce', 'https://globalmarket.com.br', '(21)3000-0003', 500, 30000000);
+    insertOrg.run('org4', 'DataFlow Analytics', 'Analytics', 'https://dataflow.com', '(11)3000-0004', 45, 3000000);
+    insertOrg.run('org5', 'Creative Lab', 'Design', 'https://creativelab.co', '(31)3000-0005', 20, 1200000);
+    insertOrg.run('org6', 'MegaStore Brasil', 'Varejo', 'https://megastore.com.br', '(61)3000-0006', 1200, 80000000);
+    insertOrg.run('org7', 'HealthPlus', 'Saude', 'https://healthplus.med', '(71)3000-0007', 150, 8000000);
+    insertOrg.run('org8', 'FintechBR', 'Fintech', 'https://fintechbr.io', '(11)3000-0008', 60, 4000000);
+
     // ── Contacts ──
     const insertContact = db.prepare(`
-      INSERT INTO contacts (id, name, email, phone, company, role, avatar, status, value, last_contact, tags, assigned_to)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO contacts (id, name, email, phone, company, role, avatar, status, value, last_contact, tags, assigned_to, organization_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const av = (seed: string) => `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}&backgroundColor=3b82f6,2563eb,1d4ed8,6366f1,8b5cf6&fontFamily=Inter&fontSize=40`;
 
-    insertContact.run('c1', 'Ana Carolina Silva', 'ana.silva@techcorp.com', '(11) 99876-5432', 'TechCorp Solutions', 'Diretora de TI', av('Ana Silva'), 'active', 85000, '2025-01-28', '["Enterprise","TI","Decisor"]', 'u1');
-    insertContact.run('c2', 'Ricardo Mendes', 'ricardo@innovatech.io', '(21) 98765-4321', 'InnovaTech', 'CEO', av('Ricardo Mendes'), 'active', 120000, '2025-01-27', '["Startup","CEO","Premium"]', 'u3');
-    insertContact.run('c3', 'Juliana Costa', 'juliana.costa@globalmarket.com', '(31) 97654-3210', 'GlobalMarket', 'Gerente Comercial', av('Juliana Costa'), 'lead', 45000, '2025-01-25', '["Varejo","Gerente"]', 'u2');
-    insertContact.run('c4', 'Fernando Oliveira', 'fernando@dataflow.com.br', '(41) 96543-2109', 'DataFlow Analytics', 'CTO', av('Fernando Oliveira'), 'active', 200000, '2025-01-26', '["Enterprise","Tech","CTO"]', 'u1');
-    insertContact.run('c5', 'Mariana Santos', 'mariana@creativelab.design', '(51) 95432-1098', 'Creative Lab', 'Head de Design', av('Mariana Santos'), 'lead', 32000, '2025-01-24', '["Design","Startup"]', 'u2');
-    insertContact.run('c6', 'Carlos Eduardo Pinto', 'carlos@megastore.com.br', '(61) 94321-0987', 'MegaStore Brasil', 'Diretor Comercial', av('Carlos Pinto'), 'active', 150000, '2025-01-29', '["Varejo","Enterprise","Decisor"]', 'u3');
-    insertContact.run('c7', 'Patricia Almeida', 'patricia@healthplus.med', '(71) 93210-9876', 'HealthPlus', 'COO', av('Patricia Almeida'), 'inactive', 0, '2024-12-15', '["Saude","Perdido"]', 'u4');
-    insertContact.run('c8', 'Lucas Ferreira', 'lucas@fintechbr.io', '(11) 92109-8765', 'FintechBR', 'Product Manager', av('Lucas Ferreira'), 'lead', 65000, '2025-01-23', '["Fintech","PM"]', 'u1');
+    insertContact.run('c1', 'Ana Carolina Silva', 'ana.silva@techcorp.com', '(11) 99876-5432', 'TechCorp Solutions', 'Diretora de TI', av('Ana Silva'), 'active', 85000, '2025-01-28', '["Enterprise","TI","Decisor"]', 'u1', 'org1');
+    insertContact.run('c2', 'Ricardo Mendes', 'ricardo@innovatech.io', '(21) 98765-4321', 'InnovaTech', 'CEO', av('Ricardo Mendes'), 'active', 120000, '2025-01-27', '["Startup","CEO","Premium"]', 'u3', 'org2');
+    insertContact.run('c3', 'Juliana Costa', 'juliana.costa@globalmarket.com', '(31) 97654-3210', 'GlobalMarket', 'Gerente Comercial', av('Juliana Costa'), 'lead', 45000, '2025-01-25', '["Varejo","Gerente"]', 'u2', 'org3');
+    insertContact.run('c4', 'Fernando Oliveira', 'fernando@dataflow.com.br', '(41) 96543-2109', 'DataFlow Analytics', 'CTO', av('Fernando Oliveira'), 'active', 200000, '2025-01-26', '["Enterprise","Tech","CTO"]', 'u1', 'org4');
+    insertContact.run('c5', 'Mariana Santos', 'mariana@creativelab.design', '(51) 95432-1098', 'Creative Lab', 'Head de Design', av('Mariana Santos'), 'lead', 32000, '2025-01-24', '["Design","Startup"]', 'u2', 'org5');
+    insertContact.run('c6', 'Carlos Eduardo Pinto', 'carlos@megastore.com.br', '(61) 94321-0987', 'MegaStore Brasil', 'Diretor Comercial', av('Carlos Pinto'), 'active', 150000, '2025-01-29', '["Varejo","Enterprise","Decisor"]', 'u3', 'org6');
+    insertContact.run('c7', 'Patricia Almeida', 'patricia@healthplus.med', '(71) 93210-9876', 'HealthPlus', 'COO', av('Patricia Almeida'), 'inactive', 0, '2024-12-15', '["Saude","Perdido"]', 'u4', 'org7');
+    insertContact.run('c8', 'Lucas Ferreira', 'lucas@fintechbr.io', '(11) 92109-8765', 'FintechBR', 'Product Manager', av('Lucas Ferreira'), 'lead', 65000, '2025-01-23', '["Fintech","PM"]', 'u1', 'org8');
 
     // ── Notes ──
     const insertNote = db.prepare(`
@@ -287,21 +577,134 @@ if (userCount.count === 0) {
     insertEmail.run('e6', 'c8', 'Lucas Ferreira', 'lucas@fintechbr.io', 'Re: Webinar - Automacao de Vendas', 'Muito interessante o webinar! Gostaria de saber mais...', 'Ola!\n\nMuito interessante o webinar! Gostaria de saber mais sobre a automacao de vendas, especificamente para fintech.\n\nPodemos conversar?\n\nLucas', '2025-01-23 16:00', 1, 'received', 0);
     insertEmail.run('e7', 'c3', 'Juliana Costa', 'juliana.costa@globalmarket.com', 'Interesse em CRM para Varejo', 'Ola, vi o perfil de voces no LinkedIn...', 'Ola,\n\nVi o perfil de voces no LinkedIn e me interessei pela solucao. Trabalho na GlobalMarket e estamos buscando um CRM.\n\nPodemos conversar?\n\nJuliana', '2025-01-25 09:30', 1, 'received', 0);
 
-    // ── Automation Rules ──
+    // ── Automation Rules (with structured trigger/condition/action) ──
     const insertRule = db.prepare(`
-      INSERT INTO automation_rules (id, name, description, trigger_event, condition, action, enabled, executions, last_triggered)
+      INSERT INTO automation_rules (id, name, description, trigger_event, condition, action, trigger_type, trigger_config, condition_type, condition_config, action_type, action_config, enabled, executions, last_triggered)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertRule.run('ar1', 'Novo Lead → Criar Tarefa', 'Quando um novo lead e cadastrado, cria automaticamente uma tarefa de follow-up', 'Novo lead cadastrado', 'Status = Lead', 'Criar tarefa follow-up', 'lead_created', '{}', 'always', '{}', 'create_task', '{"title":"Follow-up com novo lead","dueDays":2,"priority":"high","type":"follow_up"}', 1, 47, '2025-01-28 14:30');
+    insertRule.run('ar2', 'Lead Inativo → Alerta', 'Quando um lead fica sem interacao por mais de 5 dias, cria tarefa automatica', 'Lead sem interacao > 5 dias', 'Status != Fechado', 'Criar tarefa reativar', 'inactivity_days', '{"days":5,"entity":"contact"}', 'always', '{}', 'create_task', '{"title":"Reativar contato inativo","dueDays":1,"priority":"medium","type":"follow_up"}', 1, 23, '2025-01-27 08:00');
+    insertRule.run('ar3', 'Proposta Enviada → Follow-up', 'Quando um deal muda para Proposta Enviada, cria tarefa de follow-up em 3 dias', 'Deal mudou de estagio', 'Estagio = Proposta', 'Criar tarefa follow-up', 'deal_stage_changed', '{"toStage":"proposta_enviada"}', 'always', '{}', 'create_task', '{"title":"Follow-up proposta enviada","dueDays":3,"priority":"high","type":"follow_up"}', 1, 15, '2025-01-26 11:00');
+    insertRule.run('ar4', 'Deal Fechado → Onboarding', 'Quando um deal e marcado como Fechado Ganho, cria tarefa de onboarding', 'Deal fechado ganho', 'Valor > 50000', 'Criar tarefa onboarding', 'deal_stage_changed', '{"toStage":"fechado_ganho"}', 'value_greater_than', '{"entity":"deal","field":"value","value":50000}', 'create_task', '{"title":"Onboarding do cliente","dueDays":5,"priority":"high","type":"meeting"}', 1, 8, '2025-01-29 09:00');
+    insertRule.run('ar5', 'Tarefa Concluida → Atividade', 'Quando uma tarefa e concluida, registra atividade automaticamente', 'Tarefa concluida', 'Sempre', 'Criar atividade', 'task_completed', '{}', 'always', '{}', 'create_activity', '{"type":"task_done","description":"Tarefa concluida automaticamente"}', 1, 12, '2025-01-27 16:00');
+    insertRule.run('ar6', 'Lead Convertido → Atividade', 'Quando um lead e convertido, registra atividade de conversao', 'Lead convertido', 'Sempre', 'Criar atividade', 'lead_converted', '{}', 'always', '{}', 'create_activity', '{"type":"lead_converted","description":"Lead convertido em contato e deal"}', 0, 3, '2025-01-01 08:00');
+
+    // ── Leads (with job_title and company_size) ──
+    const insertLead = db.prepare(`
+      INSERT INTO leads (id, name, email, phone, company, source, score, notes, status, assigned_to, organization_id, job_title, company_size)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertLead.run('l1', 'Roberto Nascimento', 'roberto@startup.io', '(11)98765-0010', 'StartupXYZ', 'website', 'hot', 'Veio pelo site, pediu demo', 'new', 'u1', null, 'CEO', '11-50');
+    insertLead.run('l2', 'Daniela Souza', 'daniela@corp.com', '(21)98765-0020', 'CorpBrasil', 'facebook', 'warm', 'Campanha Facebook Ads', 'contacted', 'u2', null, 'Gerente Comercial', '201-1000');
+    insertLead.run('l3', 'Marcos Tavares', 'marcos@tech.net', '(31)98765-0030', 'TechNet Solutions', 'referral', 'cold', 'Indicacao do Ricardo Mendes', 'new', 'u3', null, 'Desenvolvedor', '11-50');
+    insertLead.run('l4', 'Isabela Martins', 'isabela@digital.co', '(41)98765-0040', 'Digital Co', 'manual', 'warm', 'Conheceu no evento de tecnologia', 'qualified', 'u1', null, 'Diretora de Marketing', '51-200');
+    insertLead.run('l5', 'Gustavo Pereira', 'gustavo@indie.dev', '', 'IndieDev', 'website', 'hot', 'Baixou whitepaper de automacao', 'new', 'u2', null, 'CTO', '1-10');
+
+    // ── Scheduled Activities ──
+    const insertSched = db.prepare(`
+      INSERT INTO scheduled_activities (id, type, title, description, deal_id, contact_id, assigned_to, due_date, due_time)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    insertRule.run('ar1', 'Novo Lead → Criar Tarefa', 'Quando um novo lead e cadastrado, cria automaticamente uma tarefa de follow-up para o vendedor responsavel', 'Novo lead cadastrado', 'Status = Lead', 'Criar tarefa "Follow-up inicial" (prazo: 2 dias)', 1, 47, '2025-01-28 14:30');
-    insertRule.run('ar2', 'Lead Inativo → Alerta', 'Quando um lead fica sem interacao por mais de 5 dias, gera um alerta visual e cria tarefa automatica', 'Lead sem interacao > 5 dias', 'Status ≠ Fechado', 'Alerta visual + Criar tarefa "Reativar contato"', 1, 23, '2025-01-27 08:00');
-    insertRule.run('ar3', 'Mudanca de Estagio → E-mail', 'Quando um deal muda para Proposta, envia automaticamente um e-mail template com a proposta comercial', 'Deal mudou de estagio', 'Novo estagio = Proposta', 'Enviar e-mail template "Proposta Comercial"', 1, 15, '2025-01-26 11:00');
-    insertRule.run('ar4', 'Deal Fechado → Onboarding', 'Quando um deal e marcado como Fechado, cria automaticamente tarefas de onboarding para o cliente', 'Deal estagio = Fechado', 'Valor > R$ 50.000', 'Criar 3 tarefas de onboarding + Notificar gestor', 1, 8, '2025-01-29 09:00');
-    insertRule.run('ar5', 'Follow-up Pos Demo', 'Apos uma reuniao de demo, cria tarefa de follow-up para 3 dias depois', 'Tarefa tipo "Demo" concluida', 'Deal em Qualificado ou Proposta', 'Criar tarefa "Follow-up pos demo" (prazo: 3 dias)', 1, 12, '2025-01-27 16:00');
-    insertRule.run('ar6', 'Reativacao de Inativos', 'A cada 30 dias, verifica contatos inativos e cria tarefa para tentar reativacao', 'Ciclo mensal (dia 1)', 'Status = Inativo, ultima interacao > 30 dias', 'Criar tarefa "Tentativa de reativacao"', 0, 3, '2025-01-01 08:00');
+    insertSched.run('sa1', 'call', 'Ligar para alinhar proposta', 'Discutir termos da proposta comercial', 'd1', 'c1', 'u1', '2025-02-03', '10:00');
+    insertSched.run('sa2', 'meeting', 'Reuniao de fechamento', 'Reuniao final para assinatura do contrato', 'd2', 'c2', 'u3', '2025-02-05', '14:00');
+    insertSched.run('sa3', 'email', 'Enviar material complementar', 'Cases de sucesso do setor de varejo', 'd3', 'c3', 'u2', '2025-02-10', null);
+    insertSched.run('sa4', 'demo', 'Demo do produto', 'Apresentacao tecnica para time de desenvolvimento', 'd4', 'c4', 'u1', '2025-01-30', '15:00');
+    insertSched.run('sa5', 'follow_up', 'Follow-up pos-proposta', 'Verificar interesse apos envio da proposta', 'd5', 'c5', 'u2', '2025-02-15', '09:00');
+
+    // Update next_activity_date on deals
+    db.prepare(`
+      UPDATE deals SET next_activity_date = (
+        SELECT MIN(due_date) FROM scheduled_activities
+        WHERE scheduled_activities.deal_id = deals.id AND completed = 0
+      )
+    `).run();
+
+    // ── Channel Configs (simulation mode by default) ──
+    const insertChannelConfig = db.prepare(`
+      INSERT INTO channel_configs (id, channel, config, enabled, simulation_mode)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    insertChannelConfig.run('cc1', 'smtp', '{"host":"","port":587,"secure":false,"user":"","pass":"","fromName":"PulseCRM","fromEmail":"noreply@pulsecrm.com"}', 0, 1);
+    insertChannelConfig.run('cc2', 'whatsapp', '{"phoneNumberId":"","accessToken":"","verifyToken":"pulse_verify_123","businessId":""}', 0, 1);
+    insertChannelConfig.run('cc3', 'instagram', '{"igBusinessAccountId":"","pageAccessToken":"","pageId":"","appSecret":""}', 0, 1);
+
+    // ── Cadences ──
+    const insertCadence = db.prepare(`
+      INSERT INTO cadences (id, name, description, status, created_by, total_enrolled, total_completed, total_replied)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertCadence.run('cad1', 'Outbound SaaS - Cold Email + WhatsApp', 'Sequencia de 5 toques para leads SaaS frios. Email inicial, follow-up, WhatsApp, ligacao e break-up.', 'active', 'u1', 2, 0, 0);
+    insertCadence.run('cad2', 'Re-engajamento Inativo', 'Reativar contatos sem interacao ha 30 dias com abordagem mais direta.', 'draft', 'u1', 0, 0, 0);
+
+    // ── Cadence Steps ──
+    const insertStep = db.prepare(`
+      INSERT INTO cadence_steps (id, cadence_id, step_order, delay_days, delay_hours, channel, template_subject, template_body)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    // Cadence 1: 5 steps
+    insertStep.run('cs1', 'cad1', 1, 0, 0, 'email',
+      'Ola {nome}, posso ajudar a {empresa}?',
+      'Ola {nome},\n\nVi que voce atua como {cargo} na {empresa}. Estamos ajudando empresas do seu setor a automatizar o processo de vendas e gerar mais reunioes qualificadas.\n\nTeria 15 minutos essa semana para uma conversa rapida?\n\nAbracos');
+    insertStep.run('cs2', 'cad1', 2, 2, 0, 'email',
+      'Re: {empresa} + PulseCRM',
+      'Ola {nome},\n\nSo passando para garantir que voce viu meu email anterior. Sei que a rotina e corrida.\n\nEm resumo: ajudamos empresas como a {empresa} a gerar 3x mais reunioes com automacao inteligente.\n\nVale uma conversa?');
+    insertStep.run('cs3', 'cad1', 3, 3, 0, 'whatsapp',
+      '',
+      'Ola {nome}! Sou da PulseCRM. Enviei um email sobre uma solucao de automacao para a {empresa}. Posso te contar mais em 2 minutos? 🚀');
+    insertStep.run('cs4', 'cad1', 4, 5, 0, 'call',
+      '',
+      'Ligar para {nome} ({empresa}) - 3a tentativa de contato. Mencionar automacao de vendas e cases do setor.');
+    insertStep.run('cs5', 'cad1', 5, 7, 0, 'email',
+      'Ultimo follow-up - {empresa}',
+      '{nome}, este e meu ultimo contato.\n\nSe automatizar vendas nao faz sentido para a {empresa} agora, sem problema. Mas se quiser conversar no futuro, e so responder este email.\n\nSucesso!');
+
+    // Cadence 2: 3 steps (draft)
+    insertStep.run('cs6', 'cad2', 1, 0, 0, 'email',
+      'Faz tempo que nao conversamos, {nome}',
+      'Ola {nome},\n\nFaz um tempo que conversamos sobre a {empresa}. Desde entao, lancamos novas funcionalidades que podem ser relevantes para voce.\n\nTeria interesse em retomar a conversa?');
+    insertStep.run('cs7', 'cad2', 2, 3, 0, 'whatsapp',
+      '',
+      '{nome}, tudo bem? Enviei um email recentemente sobre novidades da PulseCRM. Viu?');
+    insertStep.run('cs8', 'cad2', 3, 5, 0, 'email',
+      'Novidades PulseCRM para {empresa}',
+      '{nome}, quero compartilhar algo rapido:\n\nNossos clientes estao gerando em media 40% mais reunioes com a nova automacao de cadencias.\n\nSe quiser ver como funciona, e so responder.');
+
+    // ── Cadence Enrollments ──
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const nextDue1 = new Date(Date.now() + 30000).toISOString().replace('T', ' ').slice(0, 19); // 30s from now (for quick demo)
+    const nextDue2 = new Date(Date.now() + 172800000).toISOString().replace('T', ' ').slice(0, 19); // 2 days
+    const insertEnrollment = db.prepare(`
+      INSERT INTO cadence_enrollments (id, cadence_id, lead_id, contact_id, enrolled_by, current_step, status, started_at, next_step_due)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertEnrollment.run('ce1', 'cad1', 'l1', null, 'u1', 1, 'active', now, nextDue1);
+    insertEnrollment.run('ce2', 'cad1', 'l5', null, 'u1', 1, 'active', now, nextDue2);
+
+    // ── Compliance Config ──
+    db.prepare(`
+      INSERT INTO compliance_config (id, max_emails_per_hour_per_domain, max_emails_per_day, soft_bounce_retry_count, enabled)
+      VALUES ('config', 30, 200, 1, 1)
+    `).run();
+
+    // ── Lead Scores (initial scores based on source + ICP) ──
+    const insertScore = db.prepare(`
+      INSERT INTO lead_scores (id, lead_id, numeric_score, score_breakdown, derived_label, last_interaction_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    // l1: Roberto - CEO (10) + website (10) + company 11-50 (3) = 23 → cold
+    insertScore.run('ls1', 'l1', 23, '{"opens":0,"clicks":0,"replies":0,"responseSpeed":0,"source":10,"icp":10,"companySize":3,"decay":0,"total":23}', 'cold', null);
+    // l2: Daniela - Gerente (3) + facebook (5) + company 201-1000 (8) = 16 → cold
+    insertScore.run('ls2', 'l2', 16, '{"opens":0,"clicks":0,"replies":0,"responseSpeed":0,"source":5,"icp":3,"companySize":8,"decay":0,"total":16}', 'cold', null);
+    // l3: Marcos - Dev (0) + referral (15) + company 11-50 (3) = 18 → cold
+    insertScore.run('ls3', 'l3', 18, '{"opens":0,"clicks":0,"replies":0,"responseSpeed":0,"source":15,"icp":0,"companySize":3,"decay":0,"total":18}', 'cold', null);
+    // l4: Isabela - Diretora (7) + manual (5) + company 51-200 (5) = 17 → cold
+    insertScore.run('ls4', 'l4', 17, '{"opens":0,"clicks":0,"replies":0,"responseSpeed":0,"source":5,"icp":7,"companySize":5,"decay":0,"total":17}', 'cold', null);
+    // l5: Gustavo - CTO (10) + website (10) + company 1-10 (0) = 20 → cold
+    insertScore.run('ls5', 'l5', 20, '{"opens":0,"clicks":0,"replies":0,"responseSpeed":0,"source":10,"icp":10,"companySize":0,"decay":0,"total":20}', 'cold', null);
   });
 
   seedAll();
-  console.log('✅ Database seeded with users, contacts, deals, tasks, activities, emails, and automation rules');
+  console.log('✅ Database seeded with users, organizations, contacts, deals, leads, tasks, activities, emails, scheduled activities, automation rules, cadences, and channel configs');
 }
 
 export default db;

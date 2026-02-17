@@ -20,11 +20,12 @@ const stages: { id: DealStage; label: string }[] = [
 ];
 
 export default function DealModal({ open, onClose, deal, defaultContactId }: Props) {
-  const { contacts, addDeal, updateDeal } = useData();
+  const { contacts, organizations, addDeal, updateDeal } = useData();
   const isEdit = !!deal;
 
   const [title, setTitle] = useState(deal?.title || '');
   const [contactId, setContactId] = useState(deal?.contactId || defaultContactId || '');
+  const [organizationId, setOrganizationId] = useState(deal?.organizationId || '');
   const [value, setValue] = useState(String(deal?.value || ''));
   const [stage, setStage] = useState<DealStage>(deal?.stage || 'lead');
   const [probability, setProbability] = useState(String(deal?.probability ?? 20));
@@ -33,11 +34,21 @@ export default function DealModal({ open, onClose, deal, defaultContactId }: Pro
   useEffect(() => {
     setTitle(deal?.title || '');
     setContactId(deal?.contactId || defaultContactId || '');
+    setOrganizationId(deal?.organizationId || '');
     setValue(String(deal?.value || ''));
     setStage(deal?.stage || 'lead');
     setProbability(String(deal?.probability ?? 20));
     setExpectedClose(deal?.expectedClose || '');
   }, [deal, defaultContactId]);
+
+  /* Auto-fill organization when a contact is selected */
+  useEffect(() => {
+    if (!contactId) return;
+    const selectedContact = contacts.find((c) => c.id === contactId);
+    if (selectedContact?.organizationId) {
+      setOrganizationId(selectedContact.organizationId);
+    }
+  }, [contactId, contacts]);
 
   const selectedContact = contacts.find((c) => c.id === contactId);
 
@@ -55,6 +66,11 @@ export default function DealModal({ open, onClose, deal, defaultContactId }: Pro
       probability: Number(probability) || 20,
       expectedClose,
     };
+
+    if (organizationId) {
+      payload.organizationId = organizationId;
+    }
+
     if (isEdit && deal?.assignedTo) {
       payload.assignedTo = deal.assignedTo;
     }
@@ -74,8 +90,8 @@ export default function DealModal({ open, onClose, deal, defaultContactId }: Pro
     <Modal open={open} onClose={onClose} title={isEdit ? 'Editar Deal' : 'Novo Deal'}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className={labelClass}>Título *</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Licença Enterprise" className={inputClass} required />
+          <label className={labelClass}>Titulo *</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Licenca Enterprise" className={inputClass} required />
         </div>
         <div>
           <label className={labelClass}>Contato *</label>
@@ -83,6 +99,15 @@ export default function DealModal({ open, onClose, deal, defaultContactId }: Pro
             <option value="">Selecione um contato</option>
             {contacts.map((c) => (
               <option key={c.id} value={c.id}>{c.name} — {c.company}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Organização</label>
+          <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)} className={inputClass}>
+            <option value="">Nenhuma</option>
+            {organizations.map((org) => (
+              <option key={org.id} value={org.id}>{org.name}</option>
             ))}
           </select>
         </div>

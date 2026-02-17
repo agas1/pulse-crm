@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import db from '../db.js';
 import { verifyAuth, type AuthRequest } from '../middleware/auth.js';
+import { evaluateAutomations } from '../automation-engine.js';
 
 const router = Router();
 
@@ -233,6 +234,15 @@ router.put('/:id', (req: AuthRequest, res) => {
     }
 
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow;
+
+    // Disparar automações quando tarefa é concluída
+    if (updates.status === 'completed' && existing.status !== 'completed') {
+      try {
+        evaluateAutomations({ type: 'task_completed', data: task as unknown as Record<string, unknown>, userId: req.auth!.userId });
+      } catch (autoErr) {
+        console.error('[Automação] Erro ao processar evento task_completed:', autoErr);
+      }
+    }
 
     res.json({ task: sanitizeTask(task) });
   } catch (err: unknown) {

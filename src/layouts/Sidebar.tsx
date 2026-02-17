@@ -10,16 +10,22 @@ import {
   CheckSquare,
   Zap,
   BarChart3,
+  Inbox,
+  Building2,
+  Rocket,
 } from 'lucide-react';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/leads', icon: Inbox, label: 'Leads' },
   { to: '/contacts', icon: Users, label: 'Contatos' },
+  { to: '/organizations', icon: Building2, label: 'Organizações' },
   { to: '/pipeline', icon: Kanban, label: 'Pipeline' },
   { to: '/tasks', icon: CheckSquare, label: 'Tarefas' },
   { to: '/emails', icon: Mail, label: 'E-mail' },
   { to: '/channels', icon: MessageCircle, label: 'Canais' },
   { to: '/automations', icon: Zap, label: 'Automações' },
+  { to: '/cadences', icon: Rocket, label: 'Cadências' },
   { to: '/reports', icon: BarChart3, label: 'Relatórios' },
   { to: '/activities', icon: Activity, label: 'Atividades' },
 ];

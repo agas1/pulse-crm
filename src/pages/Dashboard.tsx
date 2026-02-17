@@ -1,3 +1,4 @@
+import { useState, useEffect, useMemo } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -6,6 +7,7 @@ import {
   DollarSign, Users, TrendingUp, Target,
   Mail, Phone, Calendar, FileText, MessageCircle, Zap, CheckCircle2,
   ArrowUpRight, ArrowDownRight,
+  AlertTriangle, Clock, CalendarCheck,
 } from 'lucide-react';
 import Header from '../layouts/Header';
 import { useTheme } from '../contexts/ThemeContext';
@@ -13,6 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { filterByOwnership } from '../config/permissions';
 import { useData } from '../contexts/DataContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { api } from '../services/api';
 
 const activityIcons: Record<string, typeof Mail> = { email: Mail, call: Phone, meeting: Calendar, note: FileText, whatsapp: MessageCircle, status_change: Zap, task_done: CheckCircle2 };
 
@@ -21,7 +24,50 @@ const formatCurrency = (value: number) => `R$ ${(value / 1000).toFixed(0)}k`;
 export default function Dashboard() {
   const { isDark } = useTheme();
   const { user } = useAuth();
-  const { contacts, deals, activities, loading } = useData();
+  const { contacts, deals, activities, scheduledActivities, loading } = useData();
+
+  const [activitySummary, setActivitySummary] = useState({ overdue: 0, today: 0, upcoming: 0, stalled: 0 });
+
+  // Compute activity summary from local data as fallback, and also try API
+  const localSummary = useMemo(() => {
+    if (loading) return { overdue: 0, today: 0, upcoming: 0, stalled: 0 };
+
+    const userDeals = user ? filterByOwnership(deals, user) : deals;
+    const todayStr = new Date().toISOString().split('T')[0];
+    let overdue = 0;
+    let today = 0;
+    let upcoming = 0;
+    let stalled = 0;
+
+    for (const deal of userDeals) {
+      // Skip closed deals
+      if (deal.stage === 'fechado_ganho' || deal.stage === 'fechado_perdido') continue;
+
+      const dealActivities = scheduledActivities.filter(sa => sa.dealId === deal.id && !sa.completed);
+      if (dealActivities.length === 0) {
+        stalled++;
+        continue;
+      }
+      const nextDate = dealActivities.reduce((min, sa) => sa.dueDate < min ? sa.dueDate : min, dealActivities[0].dueDate);
+      if (nextDate < todayStr) overdue++;
+      else if (nextDate === todayStr) today++;
+      else upcoming++;
+    }
+
+    return { overdue, today, upcoming, stalled };
+  }, [deals, scheduledActivities, user, loading]);
+
+  useEffect(() => {
+    // Try to fetch from API, fall back to local computation
+    api.get<{ overdue: number; today: number; upcoming: number; stalled: number }>('/dashboard/activity-summary')
+      .then((data) => {
+        setActivitySummary(data);
+      })
+      .catch(() => {
+        // API endpoint may not exist yet, use local computation
+        setActivitySummary(localSummary);
+      });
+  }, [localSummary]);
 
   if (loading) return <div><Header title="Dashboard" /><LoadingSpinner /></div>;
 
@@ -73,6 +119,12 @@ export default function Dashboard() {
     { title: 'Taxa de Conversão', value: `${conversionRate}%`, change: -2.1, icon: Target, bg: '#f97316' },
   ];
 
+  const summary = activitySummary.stalled > 0 || activitySummary.overdue > 0 || activitySummary.today > 0 || activitySummary.upcoming > 0
+    ? activitySummary
+    : localSummary;
+
+  const hasAttention = summary.stalled > 0 || summary.overdue > 0;
+
   return (
     <div>
       <Header title="Dashboard" subtitle="Visão geral do seu negócio" />
@@ -101,6 +153,76 @@ export default function Dashboard() {
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{metric.title}</p>
             </div>
           ))}
+        </div>
+
+        {/* Activity Motor Card */}
+        <div
+          className="bg-white dark:bg-slate-800 rounded-xl p-6 border transition-shadow hover:shadow-md"
+          style={{
+            borderColor: hasAttention ? '#f97316' : isDark ? '#334155' : '#e2e8f0',
+            borderWidth: hasAttention ? '2px' : '1px',
+          }}
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: hasAttention ? '#f97316' : '#3b82f6' }}
+            >
+              <Zap className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">Motor de Atividades</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {hasAttention ? 'Atenção necessária - existem deals que precisam de ação' : 'Todas as atividades em dia'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Stalled */}
+            <div className="rounded-xl p-4" style={{ backgroundColor: isDark ? 'rgba(148,163,184,0.1)' : '#f8fafc' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(148,163,184,0.2)' }}>
+                  <AlertTriangle className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{summary.stalled}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Deals Parados</p>
+            </div>
+
+            {/* Overdue */}
+            <div className="rounded-xl p-4" style={{ backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : '#fef2f2' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(239,68,68,0.15)' }}>
+                  <Clock className="w-4 h-4" style={{ color: '#ef4444' }} />
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{summary.overdue}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Atrasadas</p>
+            </div>
+
+            {/* Today */}
+            <div className="rounded-xl p-4" style={{ backgroundColor: isDark ? 'rgba(245,158,11,0.1)' : '#fffbeb' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.15)' }}>
+                  <Calendar className="w-4 h-4" style={{ color: '#f59e0b' }} />
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{summary.today}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Hoje</p>
+            </div>
+
+            {/* Upcoming */}
+            <div className="rounded-xl p-4" style={{ backgroundColor: isDark ? 'rgba(34,197,94,0.1)' : '#f0fdf4' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(34,197,94,0.15)' }}>
+                  <CalendarCheck className="w-4 h-4" style={{ color: '#22c55e' }} />
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{summary.upcoming}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Próximas</p>
+            </div>
+          </div>
         </div>
 
         {/* Charts Row */}

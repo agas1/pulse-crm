@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users as UsersIcon, Shield, Webhook, FileCode, Upload, Key, Globe, Calendar, MessageCircle, Mail, Bell, Zap, RefreshCw, Pencil, Trash2, X, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Users as UsersIcon, Shield, Webhook, FileCode, Upload, Key, Globe, Calendar, MessageCircle, Mail, Bell, Zap, RefreshCw, Pencil, Trash2, X, Eye, EyeOff, KeyRound, Instagram, CheckCircle, XCircle, Loader2, ToggleLeft, ToggleRight, ShieldCheck } from 'lucide-react';
 import Header from '../layouts/Header';
 import { useAuth } from '../contexts/AuthContext';
 import type { User } from '../data/types';
@@ -8,6 +8,7 @@ import CsvImportModal from '../components/CsvImportModal';
 const settingsTabs = [
   { id: 'team', label: 'Equipe', icon: UsersIcon },
   { id: 'integrations', label: 'Integrações', icon: Globe },
+  { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
   { id: 'api', label: 'API & Webhooks', icon: Webhook },
 ] as const;
 
@@ -25,57 +26,6 @@ const planConfig: Record<string, { label: string; bg: string; color: string }> =
   professional: { label: 'Pro', bg: 'rgba(99, 102, 241, 0.15)', color: '#6366f1' },
   enterprise: { label: 'Enterprise', bg: 'rgba(236, 72, 153, 0.15)', color: '#ec4899' },
 };
-
-const integrations = [
-  {
-    id: 'gcal',
-    name: 'Google Calendar',
-    description: 'Sincronize reuniões e eventos diretamente com seu Google Calendar.',
-    icon: Calendar,
-    color: '#3b82f6',
-    connected: true,
-  },
-  {
-    id: 'whatsapp',
-    name: 'WhatsApp Business API',
-    description: 'Envie e receba mensagens do WhatsApp diretamente no CRM.',
-    icon: MessageCircle,
-    color: '#22c55e',
-    connected: true,
-  },
-  {
-    id: 'smtp',
-    name: 'SMTP E-mail',
-    description: 'Configure seu servidor SMTP para envio de e-mails personalizados.',
-    icon: Mail,
-    color: '#f59e0b',
-    connected: true,
-  },
-  {
-    id: 'slack',
-    name: 'Slack',
-    description: 'Receba notificações de deals e leads diretamente no Slack.',
-    icon: Bell,
-    color: '#8b5cf6',
-    connected: false,
-  },
-  {
-    id: 'zapier',
-    name: 'Zapier',
-    description: 'Conecte o PulseCRM com mais de 5.000 aplicativos via Zapier.',
-    icon: Zap,
-    color: '#f97316',
-    connected: false,
-  },
-  {
-    id: 'hubspot',
-    name: 'HubSpot',
-    description: 'Importe e sincronize contatos e deals com o HubSpot.',
-    icon: RefreshCw,
-    color: '#3b82f6',
-    connected: false,
-  },
-];
 
 const endpoints = [
   { method: 'GET', path: '/api/leads', description: 'Listar todos os leads' },
@@ -122,6 +72,40 @@ export default function Settings() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [resetError, setResetError] = useState('');
 
+  // Channel config state
+  const [channelConfigs, setChannelConfigs] = useState<Array<{
+    channel: string;
+    config: Record<string, unknown>;
+    enabled: boolean;
+    simulationMode: boolean;
+  }>>([]);
+  const [channelLoading, setChannelLoading] = useState(false);
+  const [editingChannel, setEditingChannel] = useState<string | null>(null);
+  const [channelForm, setChannelForm] = useState<Record<string, unknown>>({});
+  const [channelEnabled, setChannelEnabled] = useState(false);
+  const [channelSimulation, setChannelSimulation] = useState(true);
+  const [channelSaving, setChannelSaving] = useState(false);
+  const [channelError, setChannelError] = useState('');
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  // Compliance state
+  const [complianceConfig, setComplianceConfig] = useState<{
+    maxEmailsPerHourPerDomain: number;
+    maxEmailsPerDay: number;
+    softBounceRetryCount: number;
+    enabled: boolean;
+  }>({ maxEmailsPerHourPerDomain: 30, maxEmailsPerDay: 200, softBounceRetryCount: 1, enabled: true });
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [complianceSaving, setComplianceSaving] = useState(false);
+  const [blocklist, setBlocklist] = useState<Array<{
+    id: string; email: string; phone: string; reason: string; source: string; unsubscribedAt: string;
+  }>>([]);
+  const [blocklistLoading, setBlocklistLoading] = useState(false);
+  const [newBlockEmail, setNewBlockEmail] = useState('');
+  const [newBlockPhone, setNewBlockPhone] = useState('');
+  const [newBlockReason, setNewBlockReason] = useState('');
+
   const headers = useCallback(() => ({
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
@@ -140,9 +124,153 @@ export default function Settings() {
     setLoading(false);
   }, [token, headers]);
 
+  const fetchChannelConfigs = useCallback(async () => {
+    setChannelLoading(true);
+    try {
+      const res = await fetch('/api/channel-configs', { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setChannelConfigs(data.configs);
+      }
+    } catch { /* ignore */ }
+    setChannelLoading(false);
+  }, [headers]);
+
+  const fetchComplianceConfig = useCallback(async () => {
+    setComplianceLoading(true);
+    try {
+      const res = await fetch('/api/compliance/config', { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setComplianceConfig(data.config);
+      }
+    } catch { /* ignore */ }
+    setComplianceLoading(false);
+  }, [headers]);
+
+  const fetchBlocklist = useCallback(async () => {
+    setBlocklistLoading(true);
+    try {
+      const res = await fetch('/api/compliance/unsubscribe-list', { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setBlocklist(data.records);
+      }
+    } catch { /* ignore */ }
+    setBlocklistLoading(false);
+  }, [headers]);
+
+  const handleSaveCompliance = async () => {
+    setComplianceSaving(true);
+    try {
+      await fetch('/api/compliance/config', {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(complianceConfig),
+      });
+    } catch { /* ignore */ }
+    setComplianceSaving(false);
+  };
+
+  const handleAddToBlocklist = async () => {
+    if (!newBlockEmail.trim() && !newBlockPhone.trim()) return;
+    try {
+      const res = await fetch('/api/compliance/unsubscribe-list', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          email: newBlockEmail.trim(),
+          phone: newBlockPhone.trim(),
+          reason: newBlockReason.trim() || 'Manual',
+        }),
+      });
+      if (res.ok) {
+        setNewBlockEmail('');
+        setNewBlockPhone('');
+        setNewBlockReason('');
+        fetchBlocklist();
+      }
+    } catch { /* ignore */ }
+  };
+
+  const handleRemoveFromBlocklist = async (id: string) => {
+    try {
+      const res = await fetch(`/api/compliance/unsubscribe-list/${id}`, {
+        method: 'DELETE',
+        headers: headers(),
+      });
+      if (res.ok) {
+        setBlocklist((prev) => prev.filter((b) => b.id !== id));
+      }
+    } catch { /* ignore */ }
+  };
+
+  const openChannelForm = (channel: string) => {
+    const existing = channelConfigs.find(c => c.channel === channel);
+    if (existing) {
+      setChannelForm(existing.config as Record<string, unknown>);
+      setChannelEnabled(existing.enabled);
+      setChannelSimulation(existing.simulationMode);
+    } else {
+      setChannelForm({});
+      setChannelEnabled(false);
+      setChannelSimulation(true);
+    }
+    setChannelError('');
+    setTestResult(null);
+    setEditingChannel(channel);
+  };
+
+  const handleSaveChannel = async () => {
+    if (!editingChannel) return;
+    setChannelSaving(true);
+    setChannelError('');
+    try {
+      const res = await fetch(`/api/channel-configs/${editingChannel}`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify({
+          config: channelForm,
+          enabled: channelEnabled,
+          simulationMode: channelSimulation,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setChannelError(data.error || 'Erro ao salvar configuração');
+        setChannelSaving(false);
+        return;
+      }
+      setEditingChannel(null);
+      fetchChannelConfigs();
+    } catch {
+      setChannelError('Erro de conexão com o servidor');
+    }
+    setChannelSaving(false);
+  };
+
+  const handleTestChannel = async () => {
+    if (!editingChannel) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/channel-configs/${editingChannel}/test`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      const data = await res.json();
+      setTestResult({ success: data.success, message: data.message });
+    } catch {
+      setTestResult({ success: false, message: 'Erro de conexão com o servidor' });
+    }
+    setTesting(false);
+  };
+
   useEffect(() => {
     if (activeTab === 'team') fetchUsers();
-  }, [activeTab, fetchUsers]);
+    if (activeTab === 'integrations') fetchChannelConfigs();
+    if (activeTab === 'compliance') { fetchComplianceConfig(); fetchBlocklist(); }
+  }, [activeTab, fetchUsers, fetchChannelConfigs, fetchComplianceConfig, fetchBlocklist]);
 
   const openCreateModal = () => {
     setEditingUser(null);
@@ -431,69 +559,550 @@ export default function Settings() {
             <div className="mb-6">
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Globe className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-                Integrações Disponíveis
+                Canais de Comunicação
               </h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                Conecte suas ferramentas favoritas ao PulseCRM
+                Configure seus canais de e-mail, WhatsApp e Instagram
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {integrations.map((integration) => (
-                <div
-                  key={integration.id}
-                  className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 hover:shadow-md transition-all flex flex-col"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div
-                      className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 flex items-center justify-center"
-                    >
-                      <integration.icon className="w-6 h-6" style={{ color: integration.color }} />
+            {channelLoading ? (
+              <div className="py-12 text-center text-sm text-slate-400">Carregando configurações...</div>
+            ) : (
+              <>
+                {/* Channel Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+                  {([
+                    { channel: 'smtp', name: 'SMTP E-mail', description: 'Configure seu servidor SMTP para envio de e-mails personalizados.', icon: Mail, color: '#f59e0b' },
+                    { channel: 'whatsapp', name: 'WhatsApp Business API', description: 'Envie e receba mensagens do WhatsApp diretamente no CRM.', icon: MessageCircle, color: '#22c55e' },
+                    { channel: 'instagram', name: 'Instagram Direct', description: 'Gerencie mensagens do Instagram Direct no CRM.', icon: Instagram, color: '#e1306c' },
+                  ] as const).map((ch) => {
+                    const cfg = channelConfigs.find(c => c.channel === ch.channel);
+                    const isConnected = cfg?.enabled && !cfg?.simulationMode;
+                    const isSimulation = cfg?.enabled && cfg?.simulationMode;
+                    const Icon = ch.icon;
+
+                    return (
+                      <div
+                        key={ch.channel}
+                        className={`bg-white dark:bg-slate-800 rounded-xl border p-5 hover:shadow-md transition-all flex flex-col ${
+                          editingChannel === ch.channel
+                            ? 'border-blue-400 dark:border-blue-500 ring-2 ring-blue-500/20'
+                            : 'border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 flex items-center justify-center">
+                            <Icon className="w-6 h-6" style={{ color: ch.color }} />
+                          </div>
+                          {isConnected ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full"
+                              style={{ backgroundColor: 'var(--tint-green)', color: '#16a34a' }}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e' }} />
+                              Conectado
+                            </span>
+                          ) : isSimulation ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full"
+                              style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#f59e0b' }}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+                              Simulação
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full"
+                              style={{ backgroundColor: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' }}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#94a3b8' }} />
+                              Desconectado
+                            </span>
+                          )}
+                        </div>
+
+                        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-1">{ch.name}</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-3 flex-1">
+                          {ch.description}
+                        </p>
+
+                        {/* Config preview */}
+                        {cfg && Object.keys(cfg.config).length > 0 && (
+                          <div className="mb-3 space-y-1">
+                            {Object.entries(cfg.config).slice(0, 3).map(([key, val]) => (
+                              <div key={key} className="flex items-center justify-between">
+                                <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{key}</span>
+                                <span className="text-xs font-mono text-slate-500 dark:text-slate-400 truncate ml-2 max-w-[140px]">
+                                  {String(val)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => editingChannel === ch.channel ? setEditingChannel(null) : openChannelForm(ch.channel)}
+                          className={`w-full py-2 text-xs font-medium rounded-lg transition-colors ${
+                            editingChannel === ch.channel
+                              ? 'text-white bg-blue-500 hover:bg-blue-600'
+                              : 'text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          {editingChannel === ch.channel ? 'Fechar' : 'Configurar'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Channel Config Form */}
+                {editingChannel && (
+                  <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 mb-6">
+                    <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                      <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                        Configurar {editingChannel === 'smtp' ? 'SMTP E-mail' : editingChannel === 'whatsapp' ? 'WhatsApp' : 'Instagram'}
+                      </h3>
+                      <button
+                        onClick={() => setEditingChannel(null)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
                     </div>
-                    {integration.connected ? (
-                      <span
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full"
-                        style={{ backgroundColor: 'var(--tint-green)', color: '#16a34a' }}
+
+                    <div className="p-6 space-y-4">
+                      {channelError && (
+                        <div className="px-4 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+                          {channelError}
+                        </div>
+                      )}
+
+                      {testResult && (
+                        <div className={`px-4 py-2.5 rounded-lg text-sm flex items-center gap-2 ${
+                          testResult.success
+                            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-600 dark:text-green-400'
+                            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400'
+                        }`}>
+                          {testResult.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                          {testResult.message}
+                        </div>
+                      )}
+
+                      {/* SMTP Fields */}
+                      {editingChannel === 'smtp' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Host</label>
+                            <input
+                              type="text"
+                              value={(channelForm.host as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, host: e.target.value })}
+                              placeholder="smtp.gmail.com"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Porta</label>
+                            <input
+                              type="number"
+                              value={(channelForm.port as number) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, port: parseInt(e.target.value) || '' })}
+                              placeholder="587"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Usuário</label>
+                            <input
+                              type="text"
+                              value={(channelForm.user as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, user: e.target.value })}
+                              placeholder="seu-email@gmail.com"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Senha</label>
+                            <input
+                              type="password"
+                              value={(channelForm.pass as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, pass: e.target.value })}
+                              placeholder="••••••••"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nome do Remetente</label>
+                            <input
+                              type="text"
+                              value={(channelForm.fromName as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, fromName: e.target.value })}
+                              placeholder="PulseCRM"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">E-mail do Remetente</label>
+                            <input
+                              type="email"
+                              value={(channelForm.fromEmail as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, fromEmail: e.target.value })}
+                              placeholder="noreply@suaempresa.com"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* WhatsApp Fields */}
+                      {editingChannel === 'whatsapp' && (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Phone Number ID</label>
+                            <input
+                              type="text"
+                              value={(channelForm.phoneNumberId as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, phoneNumberId: e.target.value })}
+                              placeholder="Seu Phone Number ID do Meta Business"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Access Token</label>
+                            <input
+                              type="password"
+                              value={(channelForm.accessToken as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, accessToken: e.target.value })}
+                              placeholder="••••••••"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Verify Token</label>
+                            <input
+                              type="text"
+                              value={(channelForm.verifyToken as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, verifyToken: e.target.value })}
+                              placeholder="Token de verificação do webhook"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Instagram Fields */}
+                      {editingChannel === 'instagram' && (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">IG Business Account ID</label>
+                            <input
+                              type="text"
+                              value={(channelForm.igBusinessAccountId as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, igBusinessAccountId: e.target.value })}
+                              placeholder="ID da conta business do Instagram"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Page Access Token</label>
+                            <input
+                              type="password"
+                              value={(channelForm.pageAccessToken as string) || ''}
+                              onChange={(e) => setChannelForm({ ...channelForm, pageAccessToken: e.target.value })}
+                              placeholder="••••••••"
+                              className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Toggles */}
+                      <div className="flex items-center gap-6 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setChannelEnabled(!channelEnabled)}
+                          className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200"
+                        >
+                          {channelEnabled ? (
+                            <ToggleRight className="w-8 h-8 text-blue-500" />
+                          ) : (
+                            <ToggleLeft className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                          )}
+                          Habilitado
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setChannelSimulation(!channelSimulation)}
+                          className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200"
+                        >
+                          {channelSimulation ? (
+                            <ToggleRight className="w-8 h-8 text-amber-500" />
+                          ) : (
+                            <ToggleLeft className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                          )}
+                          Modo Simulação
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                      <button
+                        onClick={handleTestChannel}
+                        disabled={testing}
+                        className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 flex items-center gap-2"
                       >
+                        {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                        {testing ? 'Testando...' : 'Testar Conexão'}
+                      </button>
+
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setEditingChannel(null)}
+                          className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={handleSaveChannel}
+                          disabled={channelSaving}
+                          className="px-5 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50"
+                          style={{ backgroundColor: '#6366f1' }}
+                        >
+                          {channelSaving ? 'Salvando...' : 'Salvar'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Coming Soon Integrations */}
+                <div className="mb-4 mt-2">
+                  <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Em breve</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {([
+                    { id: 'gcal', name: 'Google Calendar', description: 'Sincronize reuniões e eventos diretamente com seu Google Calendar.', icon: Calendar, color: '#3b82f6' },
+                    { id: 'slack', name: 'Slack', description: 'Receba notificações de deals e leads diretamente no Slack.', icon: Bell, color: '#8b5cf6' },
+                    { id: 'zapier', name: 'Zapier', description: 'Conecte o PulseCRM com mais de 5.000 aplicativos via Zapier.', icon: Zap, color: '#f97316' },
+                    { id: 'hubspot', name: 'HubSpot', description: 'Importe e sincronize contatos e deals com o HubSpot.', icon: RefreshCw, color: '#3b82f6' },
+                  ] as const).map((integration) => (
+                    <div
+                      key={integration.id}
+                      className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 opacity-60 flex flex-col"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 flex items-center justify-center">
+                          <integration.icon className="w-6 h-6" style={{ color: integration.color }} />
+                        </div>
                         <span
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: '#22c55e' }}
-                        />
-                        Conectado
-                      </span>
-                    ) : (
-                      <span
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full"
-                        style={{ backgroundColor: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full"
+                          style={{ backgroundColor: 'var(--surface-tertiary)', color: 'var(--text-tertiary)' }}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#94a3b8' }} />
+                          Em breve
+                        </span>
+                      </div>
+
+                      <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-1">{integration.name}</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4 flex-1">
+                        {integration.description}
+                      </p>
+
+                      <button
+                        disabled
+                        className="w-full py-2 text-xs font-medium text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg cursor-not-allowed"
                       >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: '#94a3b8' }}
-                        />
-                        Desconectado
-                      </span>
-                    )}
+                        Em breve
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'compliance' && (
+          <div className="space-y-6">
+            {/* Compliance Config */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+                <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+                  Configuração de Compliance
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                  Controle de taxa de envio, limites e opt-out
+                </p>
+              </div>
+
+              {complianceLoading ? (
+                <div className="px-6 py-12 text-center text-sm text-slate-400">Carregando...</div>
+              ) : (
+                <div className="p-6 space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                        Max e-mails/hora por domínio
+                      </label>
+                      <input
+                        type="number"
+                        value={complianceConfig.maxEmailsPerHourPerDomain}
+                        onChange={(e) => setComplianceConfig({ ...complianceConfig, maxEmailsPerHourPerDomain: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                        Max e-mails/dia (total)
+                      </label>
+                      <input
+                        type="number"
+                        value={complianceConfig.maxEmailsPerDay}
+                        onChange={(e) => setComplianceConfig({ ...complianceConfig, maxEmailsPerDay: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                        Retentativas soft bounce
+                      </label>
+                      <input
+                        type="number"
+                        value={complianceConfig.softBounceRetryCount}
+                        onChange={(e) => setComplianceConfig({ ...complianceConfig, softBounceRetryCount: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                      />
+                    </div>
                   </div>
 
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-1">{integration.name}</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4 flex-1">
-                    {integration.description}
-                  </p>
-
-                  {integration.connected ? (
-                    <button className="w-full py-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                      Configurar
-                    </button>
-                  ) : (
+                  <div className="flex items-center justify-between pt-2">
                     <button
-                      className="w-full py-2 text-xs font-medium text-white rounded-lg transition-colors"
+                      type="button"
+                      onClick={() => setComplianceConfig({ ...complianceConfig, enabled: !complianceConfig.enabled })}
+                      className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200"
+                    >
+                      {complianceConfig.enabled ? (
+                        <ToggleRight className="w-8 h-8 text-green-500" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                      )}
+                      Compliance {complianceConfig.enabled ? 'Habilitado' : 'Desabilitado'}
+                    </button>
+
+                    <button
+                      onClick={handleSaveCompliance}
+                      disabled={complianceSaving}
+                      className="px-5 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50"
                       style={{ backgroundColor: '#6366f1' }}
                     >
-                      Conectar
+                      {complianceSaving ? 'Salvando...' : 'Salvar Configuração'}
                     </button>
-                  )}
+                  </div>
                 </div>
-              ))}
+              )}
+            </div>
+
+            {/* Blocklist */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+                <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <X className="w-5 h-5 text-red-400" />
+                  Blocklist (Opt-out)
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                  Contatos que optaram por não receber mais comunicações
+                </p>
+              </div>
+
+              <div className="p-6">
+                {/* Add to blocklist form */}
+                <div className="flex items-end gap-3 mb-6">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">E-mail</label>
+                    <input
+                      type="email"
+                      value={newBlockEmail}
+                      onChange={(e) => setNewBlockEmail(e.target.value)}
+                      placeholder="email@exemplo.com"
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all text-slate-700 dark:text-slate-200 placeholder-slate-400"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Telefone</label>
+                    <input
+                      type="text"
+                      value={newBlockPhone}
+                      onChange={(e) => setNewBlockPhone(e.target.value)}
+                      placeholder="(11) 99999-0000"
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all text-slate-700 dark:text-slate-200 placeholder-slate-400"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Motivo</label>
+                    <input
+                      type="text"
+                      value={newBlockReason}
+                      onChange={(e) => setNewBlockReason(e.target.value)}
+                      placeholder="Ex: solicitou remoção"
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all text-slate-700 dark:text-slate-200 placeholder-slate-400"
+                    />
+                  </div>
+                  <button
+                    onClick={handleAddToBlocklist}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors shrink-0"
+                  >
+                    + Adicionar
+                  </button>
+                </div>
+
+                {/* Blocklist table */}
+                {blocklistLoading ? (
+                  <div className="py-8 text-center text-sm text-slate-400">Carregando blocklist...</div>
+                ) : blocklist.length === 0 ? (
+                  <div className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                    Nenhum contato na blocklist.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">E-mail</th>
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Telefone</th>
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Motivo</th>
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Origem</th>
+                          <th className="text-left px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Data</th>
+                          <th className="text-right px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {blocklist.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{item.email || '-'}</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">{item.phone || '-'}</td>
+                            <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400">{item.reason || '-'}</td>
+                            <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400">{item.source || '-'}</td>
+                            <td className="px-3 py-2.5 text-xs text-slate-400 dark:text-slate-500">
+                              {item.unsubscribedAt ? new Date(item.unsubscribedAt).toLocaleDateString('pt-BR') : '-'}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <button
+                                onClick={() => handleRemoveFromBlocklist(item.id)}
+                                className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors"
+                              >
+                                Remover
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

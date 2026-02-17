@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import db from '../db.js';
 import { verifyAuth } from '../middleware/auth.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { evaluateAutomations } from '../automation-engine.js';
 
 const router = Router();
 
@@ -105,6 +106,33 @@ router.get('/', (req: AuthRequest, res) => {
 });
 
 // ──────────────────────────────────────
+// GET /stalled — Deals without upcoming activities
+// ──────────────────────────────────────
+
+router.get('/stalled', (req: AuthRequest, res) => {
+  try {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    conditions.push("(next_activity_date IS NULL OR next_activity_date < date('now'))");
+
+    // Ownership: sellers only see their own deals
+    if (req.auth!.role === 'seller') {
+      conditions.push('assigned_to = ?');
+      params.push(req.auth!.userId);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const deals = db.prepare(`SELECT * FROM deals ${where} ORDER BY created_at DESC`).all(...params) as DealRow[];
+
+    res.json({ deals: deals.map(sanitizeDeal) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro desconhecido';
+    res.status(500).json({ error: `Erro ao buscar deals parados: ${message}` });
+  }
+});
+
+// ──────────────────────────────────────
 // GET /:id — Single deal
 // ──────────────────────────────────────
 
@@ -184,6 +212,13 @@ router.post('/', (req: AuthRequest, res) => {
     );
 
     const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(id) as DealRow;
+
+    // Disparar automações para deal criado
+    try {
+      evaluateAutomations({ type: 'deal_created', data: deal as unknown as Record<string, unknown>, userId: req.auth!.userId });
+    } catch (autoErr) {
+      console.error('[Automação] Erro ao processar evento deal_created:', autoErr);
+    }
 
     res.status(201).json({ deal: sanitizeDeal(deal) });
   } catch (err: unknown) {
@@ -331,6 +366,17 @@ router.put('/:id/stage', (req: AuthRequest, res) => {
     );
 
     const deal = db.prepare('SELECT * FROM deals WHERE id = ?').get(id) as DealRow;
+
+    // Disparar automações para mudança de estágio
+    try {
+      evaluateAutomations({
+        type: 'deal_stage_changed',
+        data: { ...(deal as unknown as Record<string, unknown>), fromStage: oldStage, toStage: stage },
+        userId: req.auth!.userId,
+      });
+    } catch (autoErr) {
+      console.error('[Automação] Erro ao processar evento deal_stage_changed:', autoErr);
+    }
 
     res.json({ deal: sanitizeDeal(deal) });
   } catch (err: unknown) {

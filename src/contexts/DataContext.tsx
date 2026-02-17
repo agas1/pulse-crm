@@ -14,6 +14,9 @@ import type {
   EmailMessage,
   TimelineEvent,
   Note,
+  Lead,
+  Organization,
+  ScheduledActivity,
 } from '../data/types';
 import { api } from '../services/api';
 
@@ -27,6 +30,9 @@ interface DataContextValue {
   tasks: Task[];
   activities: Activity[];
   emails: EmailMessage[];
+  leads: Lead[];
+  organizations: Organization[];
+  scheduledActivities: ScheduledActivity[];
   loading: boolean;
 
   addContact: (data: Omit<Contact, 'id' | 'avatar' | 'notes'>) => Promise<Contact>;
@@ -50,11 +56,28 @@ interface DataContextValue {
   updateEmail: (id: string, data: Partial<EmailMessage>) => Promise<void>;
   deleteEmail: (id: string) => Promise<void>;
 
+  addLead: (data: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Lead>;
+  updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
+  deleteLead: (id: string) => Promise<void>;
+  convertLead: (id: string, data: { dealTitle: string; dealValue: number; dealStage: string }) => Promise<{ contact: Contact; deal: Deal }>;
+
+  addOrganization: (data: Omit<Organization, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Organization>;
+  updateOrganization: (id: string, data: Partial<Organization>) => Promise<void>;
+  deleteOrganization: (id: string) => Promise<void>;
+
+  addScheduledActivity: (data: Omit<ScheduledActivity, 'id' | 'completed' | 'completedAt' | 'createdAt'>) => Promise<ScheduledActivity>;
+  updateScheduledActivity: (id: string, data: Partial<ScheduledActivity>) => Promise<void>;
+  completeScheduledActivity: (id: string) => Promise<void>;
+  deleteScheduledActivity: (id: string) => Promise<void>;
+
   refreshContacts: () => Promise<void>;
   refreshDeals: () => Promise<void>;
   refreshTasks: () => Promise<void>;
   refreshActivities: () => Promise<void>;
   refreshEmails: () => Promise<void>;
+  refreshLeads: () => Promise<void>;
+  refreshOrganizations: () => Promise<void>;
+  refreshScheduledActivities: () => Promise<void>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -75,6 +98,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivity[]>([]);
   const [loading, setLoading] = useState(() => !!localStorage.getItem('pulse-auth-token'));
 
   /* ---------- initial fetch on mount ---------- */
@@ -89,13 +115,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       api.get<{ tasks: Task[] }>('/tasks'),
       api.get<{ activities: Activity[] }>('/activities'),
       api.get<{ emails: EmailMessage[] }>('/emails'),
+      api.get<{ leads: Lead[] }>('/leads'),
+      api.get<{ organizations: Organization[] }>('/organizations'),
+      api.get<{ scheduledActivities: ScheduledActivity[] }>('/scheduled-activities'),
     ])
-      .then(([c, d, t, a, e]) => {
+      .then(([c, d, t, a, e, l, o, sa]) => {
         setContacts(c.contacts);
         setDeals(d.deals);
         setTasks(t.tasks);
         setActivities(a.activities);
         setEmails(e.emails);
+        setLeads(l.leads);
+        setOrganizations(o.organizations);
+        setScheduledActivities(sa.scheduledActivities);
       })
       .catch(() => {
         // silently fail - user may not be authenticated yet
@@ -130,6 +162,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setEmails(list);
   }, []);
 
+  const refreshLeads = useCallback(async () => {
+    const { leads: list } = await api.get<{ leads: Lead[] }>('/leads');
+    setLeads(list);
+  }, []);
+
+  const refreshOrganizations = useCallback(async () => {
+    const { organizations: list } = await api.get<{ organizations: Organization[] }>('/organizations');
+    setOrganizations(list);
+  }, []);
+
+  const refreshScheduledActivities = useCallback(async () => {
+    const { scheduledActivities: list } = await api.get<{ scheduledActivities: ScheduledActivity[] }>('/scheduled-activities');
+    setScheduledActivities(list);
+  }, []);
+
   /* ================================================================ */
   /*  Contacts                                                         */
   /* ================================================================ */
@@ -146,7 +193,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const importContacts = useCallback(
     async (rows: Omit<Contact, 'id' | 'avatar' | 'notes'>[]): Promise<number> => {
       const { imported } = await api.post<{ imported: number }>('/contacts/import', { rows });
-      // Refresh the full list so we get server-generated ids / avatars
       await refreshContacts();
       return imported;
     },
@@ -155,14 +201,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateContact = useCallback(
     async (id: string, patch: Partial<Contact>): Promise<void> => {
-      // optimistic update
       setContacts((prev) =>
         prev.map((c) => (c.id === id ? { ...c, ...patch } : c)),
       );
       try {
         await api.put<{ contact: Contact }>(`/contacts/${id}`, patch);
       } catch (err) {
-        // revert on failure
         await refreshContacts();
         throw err;
       }
@@ -172,7 +216,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const deleteContact = useCallback(
     async (id: string): Promise<void> => {
-      // optimistic update
       const prevContacts = contacts;
       const prevDeals = deals;
       setContacts((prev) => prev.filter((c) => c.id !== id));
@@ -180,7 +223,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       try {
         await api.del<{ message: string }>(`/contacts/${id}`);
       } catch (err) {
-        // revert on failure
         setContacts(prevContacts);
         setDeals(prevDeals);
         throw err;
@@ -219,19 +261,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateDeal = useCallback(
     async (id: string, patch: Partial<Deal>): Promise<void> => {
-      // optimistic update
       setDeals((prev) =>
         prev.map((d) => (d.id === id ? { ...d, ...patch } : d)),
       );
       try {
-        // Use the dedicated stage endpoint when stage is being changed
         if (patch.stage !== undefined) {
           await api.put<{ deal: Deal }>(`/deals/${id}/stage`, patch);
         } else {
           await api.put<{ deal: Deal }>(`/deals/${id}`, patch);
         }
       } catch (err) {
-        // revert on failure
         await refreshDeals();
         throw err;
       }
@@ -363,6 +402,168 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [emails],
   );
 
+  /* ================================================================ */
+  /*  Leads                                                            */
+  /* ================================================================ */
+
+  const addLead = useCallback(
+    async (input: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>): Promise<Lead> => {
+      const { lead } = await api.post<{ lead: Lead }>('/leads', input);
+      setLeads((prev) => [lead, ...prev]);
+      return lead;
+    },
+    [],
+  );
+
+  const updateLead = useCallback(
+    async (id: string, patch: Partial<Lead>): Promise<void> => {
+      setLeads((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+      );
+      try {
+        await api.put<{ lead: Lead }>(`/leads/${id}`, patch);
+      } catch (err) {
+        await refreshLeads();
+        throw err;
+      }
+    },
+    [refreshLeads],
+  );
+
+  const deleteLead = useCallback(
+    async (id: string): Promise<void> => {
+      const prev = leads;
+      setLeads((current) => current.filter((l) => l.id !== id));
+      try {
+        await api.del<{ message: string }>(`/leads/${id}`);
+      } catch (err) {
+        setLeads(prev);
+        throw err;
+      }
+    },
+    [leads],
+  );
+
+  const convertLead = useCallback(
+    async (id: string, data: { dealTitle: string; dealValue: number; dealStage: string }): Promise<{ contact: Contact; deal: Deal }> => {
+      const result = await api.post<{ contact: Contact; deal: Deal }>(`/leads/${id}/convert`, data);
+      // Remove from leads, add to contacts and deals
+      setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: 'qualified' as const } : l));
+      setContacts((prev) => [result.contact, ...prev]);
+      setDeals((prev) => [result.deal, ...prev]);
+      return result;
+    },
+    [],
+  );
+
+  /* ================================================================ */
+  /*  Organizations                                                    */
+  /* ================================================================ */
+
+  const addOrganization = useCallback(
+    async (input: Omit<Organization, 'id' | 'createdAt' | 'updatedAt'>): Promise<Organization> => {
+      const { organization } = await api.post<{ organization: Organization }>('/organizations', input);
+      setOrganizations((prev) => [organization, ...prev]);
+      return organization;
+    },
+    [],
+  );
+
+  const updateOrganization = useCallback(
+    async (id: string, patch: Partial<Organization>): Promise<void> => {
+      setOrganizations((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, ...patch } : o)),
+      );
+      try {
+        await api.put<{ organization: Organization }>(`/organizations/${id}`, patch);
+      } catch (err) {
+        await refreshOrganizations();
+        throw err;
+      }
+    },
+    [refreshOrganizations],
+  );
+
+  const deleteOrganization = useCallback(
+    async (id: string): Promise<void> => {
+      const prev = organizations;
+      setOrganizations((current) => current.filter((o) => o.id !== id));
+      try {
+        await api.del<{ message: string }>(`/organizations/${id}`);
+      } catch (err) {
+        setOrganizations(prev);
+        throw err;
+      }
+    },
+    [organizations],
+  );
+
+  /* ================================================================ */
+  /*  Scheduled Activities                                             */
+  /* ================================================================ */
+
+  const addScheduledActivity = useCallback(
+    async (input: Omit<ScheduledActivity, 'id' | 'completed' | 'completedAt' | 'createdAt'>): Promise<ScheduledActivity> => {
+      const { scheduledActivity } = await api.post<{ scheduledActivity: ScheduledActivity }>('/scheduled-activities', input);
+      setScheduledActivities((prev) => [scheduledActivity, ...prev]);
+      // Refresh deals to get updated nextActivityDate
+      const { deals: updatedDeals } = await api.get<{ deals: Deal[] }>('/deals');
+      setDeals(updatedDeals);
+      return scheduledActivity;
+    },
+    [],
+  );
+
+  const updateScheduledActivity = useCallback(
+    async (id: string, patch: Partial<ScheduledActivity>): Promise<void> => {
+      setScheduledActivities((prev) =>
+        prev.map((sa) => (sa.id === id ? { ...sa, ...patch } : sa)),
+      );
+      try {
+        await api.put<{ scheduledActivity: ScheduledActivity }>(`/scheduled-activities/${id}`, patch);
+      } catch (err) {
+        await refreshScheduledActivities();
+        throw err;
+      }
+    },
+    [refreshScheduledActivities],
+  );
+
+  const completeScheduledActivity = useCallback(
+    async (id: string): Promise<void> => {
+      setScheduledActivities((prev) =>
+        prev.map((sa) => (sa.id === id ? { ...sa, completed: true, completedAt: new Date().toISOString() } : sa)),
+      );
+      try {
+        await api.put<{ scheduledActivity: ScheduledActivity }>(`/scheduled-activities/${id}/complete`, {});
+        // Refresh deals to get updated nextActivityDate
+        const { deals: updatedDeals } = await api.get<{ deals: Deal[] }>('/deals');
+        setDeals(updatedDeals);
+      } catch (err) {
+        await refreshScheduledActivities();
+        throw err;
+      }
+    },
+    [refreshScheduledActivities],
+  );
+
+  const deleteScheduledActivity = useCallback(
+    async (id: string): Promise<void> => {
+      const prev = scheduledActivities;
+      setScheduledActivities((current) => current.filter((sa) => sa.id !== id));
+      try {
+        await api.del<{ message: string }>(`/scheduled-activities/${id}`);
+        // Refresh deals to get updated nextActivityDate
+        const { deals: updatedDeals } = await api.get<{ deals: Deal[] }>('/deals');
+        setDeals(updatedDeals);
+      } catch (err) {
+        setScheduledActivities(prev);
+        throw err;
+      }
+    },
+    [scheduledActivities],
+  );
+
   /* ------------------------------------------------------------------ */
   /*  Render                                                             */
   /* ------------------------------------------------------------------ */
@@ -375,6 +576,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         tasks,
         activities,
         emails,
+        leads,
+        organizations,
+        scheduledActivities,
         loading,
 
         addContact,
@@ -398,11 +602,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
         updateEmail,
         deleteEmail,
 
+        addLead,
+        updateLead,
+        deleteLead,
+        convertLead,
+
+        addOrganization,
+        updateOrganization,
+        deleteOrganization,
+
+        addScheduledActivity,
+        updateScheduledActivity,
+        completeScheduledActivity,
+        deleteScheduledActivity,
+
         refreshContacts,
         refreshDeals,
         refreshTasks,
         refreshActivities,
         refreshEmails,
+        refreshLeads,
+        refreshOrganizations,
+        refreshScheduledActivities,
       }}
     >
       {children}

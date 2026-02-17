@@ -16,6 +16,12 @@ interface AutomationRuleRow {
   trigger_event: string;
   condition: string;
   action: string;
+  trigger_type: string;
+  trigger_config: string;
+  condition_type: string;
+  condition_config: string;
+  action_type: string;
+  action_config: string;
   enabled: number;
   executions: number;
   last_triggered: string | null;
@@ -23,11 +29,29 @@ interface AutomationRuleRow {
   updated_at: string;
 }
 
+interface AutomationLogRow {
+  id: string;
+  rule_id: string;
+  rule_name: string;
+  trigger_type: string;
+  action_type: string;
+  result: string;
+  details: string;
+  created_at: string;
+}
+
 // ──────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────
 
 function sanitizeRule(row: AutomationRuleRow) {
+  let triggerConfig = {};
+  let conditionConfig = {};
+  let actionConfig = {};
+  try { triggerConfig = JSON.parse(row.trigger_config || '{}'); } catch { /* config inválida */ }
+  try { conditionConfig = JSON.parse(row.condition_config || '{}'); } catch { /* config inválida */ }
+  try { actionConfig = JSON.parse(row.action_config || '{}'); } catch { /* config inválida */ }
+
   return {
     id: row.id,
     name: row.name,
@@ -35,11 +59,30 @@ function sanitizeRule(row: AutomationRuleRow) {
     trigger: row.trigger_event,
     condition: row.condition,
     action: row.action,
+    triggerType: row.trigger_type,
+    triggerConfig,
+    conditionType: row.condition_type,
+    conditionConfig,
+    actionType: row.action_type,
+    actionConfig,
     enabled: Boolean(row.enabled),
     executions: row.executions,
     lastTriggered: row.last_triggered,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function sanitizeLog(row: AutomationLogRow) {
+  return {
+    id: row.id,
+    ruleId: row.rule_id,
+    ruleName: row.rule_name,
+    triggerType: row.trigger_type,
+    actionType: row.action_type,
+    result: row.result,
+    details: row.details,
+    createdAt: row.created_at,
   };
 }
 
@@ -169,6 +212,20 @@ router.delete('/:id', (req: AuthRequest, res) => {
     res.json({ message: 'Regra de automação removida com sucesso' });
   } catch {
     res.status(500).json({ error: 'Erro ao remover regra de automação' });
+  }
+});
+
+// ──────────────────────────────────────
+// GET /logs — List automation execution logs
+// ──────────────────────────────────────
+
+router.get('/logs', (req: AuthRequest, res) => {
+  try {
+    const logs = db.prepare('SELECT * FROM automation_logs ORDER BY created_at DESC LIMIT 50').all() as AutomationLogRow[];
+
+    res.json({ logs: logs.map(sanitizeLog) });
+  } catch {
+    res.status(500).json({ error: 'Erro ao buscar logs de automação' });
   }
 });
 
