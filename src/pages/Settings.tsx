@@ -142,7 +142,7 @@ export default function Settings() {
       const res = await fetch('/api/compliance/config', { headers: headers() });
       if (res.ok) {
         const data = await res.json();
-        setComplianceConfig(data.config);
+        setComplianceConfig(data.config || data);
       }
     } catch { /* ignore */ }
     setComplianceLoading(false);
