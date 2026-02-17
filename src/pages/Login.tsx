@@ -666,26 +666,6 @@ export default function Login() {
           )}
         </div>
 
-        {/* Dev hint - only on login view */}
-        {view === 'login' && (
-          <div
-            className="mt-8 rounded-xl p-5 text-xs"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
-              color: 'rgba(255,255,255,0.35)',
-            }}
-          >
-            <p className="font-medium mb-2.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              Contas de teste:
-            </p>
-            <div className="space-y-1.5">
-              <p>admin@pulsecrm.com / 123456 (Admin)</p>
-              <p>camila@pulsecrm.com / 123456 (Manager)</p>
-              <p>marina@pulsecrm.com / 123456 (Seller)</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
